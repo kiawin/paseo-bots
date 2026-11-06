@@ -581,16 +581,15 @@ export interface BotSessionConfig {
 }
 
 /**
- * A new chat's config with the bot's settings applied: its provider, model,
- * mode and thinking (a setting the bot leaves open keeps the chat's own while
- * the provider stays the same), its system prompt, its MCP servers on top of
- * the chat's own, and the tools it may use without asking.
+ * A new chat's config as the bot's settings say, whatever the chat asked for:
+ * the bot's provider, model, mode and thinking (one the bot leaves on Default
+ * is the provider's default), its system prompt, only its MCP servers and the
+ * plugin's, and only the tools it may use without asking. Paseo still adds its
+ * own tools, and the user can switch model or mode inside a chat once it runs.
  */
 export function applyBotConfig<Config extends BotSessionConfig>(config: Config, bot: Bot, library: Library, systemPrompt: string, plugin: PluginServers = {}): Config & BotSessionConfig {
   const provider = bot.provider || config.provider;
-  const same = provider === config.provider;
   const mcpServers: Record<string, McpServerConfig> = {
-    ...config.mcpServers,
     ...mcpServersRecord(botMcpServers(bot, library)),
     ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
     ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
@@ -601,12 +600,11 @@ export function applyBotConfig<Config extends BotSessionConfig>(config: Config, 
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later),
   // and when the provider can't take exact grants at all.
-  const grants = supportsToolGrants(provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
-  const preapproved = [...(same ? (config.toolPolicy?.preapproved ?? []) : []), ...grants];
+  const preapproved = supportsToolGrants(provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
   const next: Config = { ...config, provider, systemPrompt };
   const pick = (key: "model" | "modeId" | "thinkingOptionId", value: string | null) => {
     if (value) next[key] = value;
-    else if (!same) delete next[key];
+    else delete next[key];
   };
   pick("model", bot.model);
   pick("modeId", bot.modeId);
