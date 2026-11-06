@@ -602,8 +602,9 @@ export function parentClaudeMdFiles(folder: string): string[] {
  * Claude Code flags that keep a bot's chat (working in `folder`) to what its
  * settings say. No user settings: none of ~/.claude/settings.json's hooks,
  * plugins and permissions. No CLAUDE.md from the user or from any folder
- * above the bot's. Only the MCP servers Paseo passes in, so none of the user's
- * or a project's .mcp.json servers. The login and session files stay where
+ * above the bot's. No auto-memory of Claude Code's own, so the bot's MEMORY.md
+ * is its only memory. Only the MCP servers Paseo passes in, so none of the
+ * user's or a project's .mcp.json servers. The login and session files stay where
  * they are. The bot's own folder still counts as the project, so a CLAUDE.md
  * or .claude/settings.json there applies. Paseo hands extraArgs to the CLI
  * after its own flags, and the last --setting-sources wins.
@@ -612,7 +613,7 @@ export function claudeBotArgs(folder: string | undefined): Record<string, string
   return {
     "setting-sources": "project,local",
     "strict-mcp-config": null,
-    ...(folder ? { settings: JSON.stringify({ claudeMdExcludes: parentClaudeMdFiles(folder) }) } : {}),
+    settings: JSON.stringify({ autoMemoryEnabled: false, ...(folder ? { claudeMdExcludes: parentClaudeMdFiles(folder) } : {}) }),
   };
 }
 
