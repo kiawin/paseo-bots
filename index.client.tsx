@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BotsSurface } from "./client/BotsSurface";
 import { BOT_PANEL_ID, BotWorkspacePanel } from "./client/BotWorkspacePanel";
 import { installBotHeaderButtons } from "./client/header-buttons";
+import { SidebarSection } from "./client/SidebarSection";
 import { NativeConnectCard } from "./client/cards/ConnectCard";
 import { ProposalCard } from "./client/cards/ProposalCard";
 import { RoutineRunCard } from "./client/cards/RoutineRunCard";
@@ -11,7 +12,7 @@ import { BotsSettings } from "./client/settings/BotsSettings";
 import { installTooltips } from "./client/ui/Tooltip";
 import { appSignIns } from "./shared/apps";
 import { proposalIdOf } from "./shared/proposals";
-import { APP_SIGN_IN_CARD, AppSignInSchema, chatBotRpc, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
+import { APP_SIGN_IN_CARD, AppSignInSchema, botWorkspaceRpc, chatBotRpc, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
 import { LEARN_COMMAND, learnPrompt } from "./shared/skills";
 
 export default function contribute(client: PluginClientContext) {
@@ -23,7 +24,8 @@ export default function contribute(client: PluginClientContext) {
   client.addWorkspacePanel({ id: BOT_PANEL_ID, title: "Bot", icon: "Bot", locations: ["explorer", "workspace"], Component: BotWorkspacePanel });
   const removeHeaderButtons = installBotHeaderButtons(client, openBotPanel);
   client.addSurface("bots", (props) => <BotsSurface {...props} openBotPanel={openBotPanel} />);
-  client.addSidebarItem({ id: "bots", title: "Bots", icon: "Bot", surface: "bots" });
+  const openBot = async (botId: string) => openBotPanel((await client.rpc(botWorkspaceRpc, { botId })).workspaceId);
+  client.addSidebarHeaderItem({ id: "bots", title: "Bots", Component: (props) => <SidebarSection {...props} openBot={openBot} /> });
   client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
   client.addCommandCenterItem({
     id: "open-bots",
