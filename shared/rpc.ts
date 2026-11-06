@@ -8,9 +8,7 @@ const BotId = z.string().regex(/^[a-z0-9-]+$/);
 const MemoryFileName = z.string().regex(/^[A-Za-z0-9 ._-]+\.md$/);
 const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
 
-/**
- * Creates (if needed) the Bots project folder and this bot's folder inside it.
- * `root` backs the Bots project, `path` the bot's workspace.
+/** Creates (if needed) the bot's own folder, its workspace's working folder.
  */
 export const ensureBotHomeRpc = defineRpc({
   name: "bots.ensure-home",
@@ -23,6 +21,27 @@ export const botHomeRpc = defineRpc({
   name: "bots.home",
   input: z.object({ botId: BotId }),
   output: z.object({ path: z.string().nullable() }),
+});
+
+/** The bot's workspace, with its folder and project created on first use. */
+export const botWorkspaceRpc = defineRpc({
+  name: "bots.workspace",
+  input: z.object({ botId: BotId }),
+  output: z.object({ workspaceId: z.string() }),
+});
+
+/** Bots' workspaces that exist, for their header buttons. */
+export const botWorkspacesRpc = defineRpc({
+  name: "bots.workspaces",
+  input: z.object({}),
+  output: z.object({ workspaces: z.array(z.object({ botId: z.string(), name: z.string(), avatar: BotSchema.shape.avatar, workspaceId: z.string() })) }),
+});
+
+/** The bot whose folder a workspace is in; null for other workspaces. */
+export const workspaceBotRpc = defineRpc({
+  name: "bots.workspace-bot",
+  input: z.object({ workspaceId: z.string().min(1).max(200) }),
+  output: z.object({ botId: z.string().nullable() }),
 });
 
 /** The bot a chat belongs to (by its folder, or its label for older chats); null for other agents. */
@@ -54,6 +73,34 @@ export const memoryListRpc = defineRpc({
   name: "bots.memory.list",
   input: z.object({ botId: BotId }),
   output: z.object({ folder: z.string(), files: z.array(MemoryFileSchema), injectedLines: z.number(), injectedBytes: z.number() }),
+});
+
+const RunbookFile = z.string().regex(/^[a-z0-9][a-z0-9._-]*\.md$/);
+
+/** The bot's runbooks; before it has a folder, the playbooks it will start with. */
+export const runbookListRpc = defineRpc({
+  name: "bots.runbooks.list",
+  input: z.object({ botId: BotId }),
+  output: z.object({ folder: z.string().nullable(), runbooks: z.array(z.object({ file: RunbookFile, description: z.string() })) }),
+});
+
+export const runbookReadRpc = defineRpc({
+  name: "bots.runbooks.read",
+  input: z.object({ botId: BotId, file: RunbookFile }),
+  output: z.object({ text: z.string() }),
+});
+
+/** Writes a runbook, creating the bot's folder (with its first runbooks) if needed. */
+export const runbookWriteRpc = defineRpc({
+  name: "bots.runbooks.write",
+  input: z.object({ botId: BotId, file: RunbookFile, text: z.string().max(200_000) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const runbookDeleteRpc = defineRpc({
+  name: "bots.runbooks.delete",
+  input: z.object({ botId: BotId, file: RunbookFile }),
+  output: z.object({ ok: z.boolean() }),
 });
 
 export const memoryReadRpc = defineRpc({
@@ -264,13 +311,6 @@ export const importTeamRpc = defineRpc({
   name: "bots.import-team",
   input: z.object({ json: z.string().max(20_000_000) }),
   output: z.object({ bots: z.array(ImportedBotSchema), teams: z.array(TeamFileTeamSchema) }),
-});
-
-/** Stores a picked file on this host so it can be sent as an `uploaded_file` attachment. */
-export const uploadRpc = defineRpc({
-  name: "bots.upload",
-  input: z.object({ botId: BotId, fileName: z.string().min(1).max(255), dataBase64: z.string().max(36_000_000) }),
-  output: z.object({ path: z.string(), size: z.number() }),
 });
 
 // ---------------------------------------------------------------- connected apps

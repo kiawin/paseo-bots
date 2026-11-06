@@ -129,11 +129,6 @@ export function nativeTokens(colors: Colors): NativeTokens {
   return tokens;
 }
 
-/** Paseo's composer placeholder colour (surface4). */
-export function placeholderColor(colors: Colors): string {
-  return nativeTokens(colors).surface4;
-}
-
 // ---------------------------------------------------------------- confirm
 
 export interface ConfirmInput {

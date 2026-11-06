@@ -39,8 +39,7 @@ function teamLine(bot: Bot, groups: PanelProps["groups"]): string {
   return `On ${group.name}`;
 }
 
-export function OverviewSection({ colors, bot, library, groups, localHost, onSetup }: PanelProps) {
-  const host = useBotHost(localHost);
+export function OverviewSection({ colors, bot, library, groups, onSetup }: PanelProps) {
   const compose = useRpc(systemPromptRpc);
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
@@ -57,7 +56,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
   const tools = [
     ...botMcpServers(bot, library).map((server) => server.name),
     ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`),
-    ...(appsStatus.data?.configured && host.isLocal ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
+    ...(appsStatus.data?.configured ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
   ];
   const sections = prompt.data?.sections ?? [];
 

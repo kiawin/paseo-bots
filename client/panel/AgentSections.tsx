@@ -27,7 +27,7 @@ export function AccessSection(props: PanelProps) {
     <>
       <PaseoToolsSection colors={colors} bot={bot} localHost={localHost} />
       <LibraryPicker {...props} kind="mcp" title="MCP servers" info="Added on top of the MCP servers the provider already loads. Paseo's own tools are always included. Add and edit servers in Skills & Tools." />
-      <AppsPicker colors={colors} bot={bot} localHost={localHost} onPatch={onPatch} />
+      <AppsPicker colors={colors} bot={bot} onPatch={onPatch} />
       <AdvancedToggle colors={colors} open={advanced} onToggle={() => setAdvanced(!advanced)} />
       {advanced ? <GrantsSection {...props} /> : null}
     </>
@@ -198,8 +198,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
           />
         </SettingsCard>
       </SettingsSection>
-      {host.isLocal ? (
-        <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">
+      <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">
           <SettingsCard>
             <SettingsSelect
               label="Contact other bots"
@@ -214,8 +213,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
             />
           </SettingsCard>
         </SettingsSection>
-      ) : null}
-      {host.isLocal ? <AllowedCommands colors={colors} bot={bot} /> : null}
+      <AllowedCommands colors={colors} bot={bot} />
     </>
   );
 }

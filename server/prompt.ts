@@ -9,7 +9,6 @@ import { teamOf, teamPrompt } from "../shared/groups";
 import { linkBotSkills, skillSha } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
 import { listRunbooks, runbooksFolder } from "./runbooks";
-import { BOT_GENUI_INSTRUCTIONS } from "../shared/genui-instructions";
 
 /**
  * The connected apps a bot may use right now (allowed for it and signed in on
@@ -76,7 +75,7 @@ export async function systemPrompt({ bot }: { bot: Bot }, library: Library, pase
   const start: ChatStart = group && settings ? { team: { group, bots: settings.bots } } : {};
   const context = await promptContext(bot, library, await paseoToolsOn(paseo, bot.provider), start);
   return {
-    systemPrompt: [composeSystemPrompt(bot, context), BOT_GENUI_INSTRUCTIONS].join("\n\n"),
+    systemPrompt: composeSystemPrompt(bot, context),
     sections: promptSections(bot, context),
   };
 }

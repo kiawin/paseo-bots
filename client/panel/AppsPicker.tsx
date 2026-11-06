@@ -3,7 +3,6 @@ import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { accountLabel, withAppRule, type AppAccount } from "../../shared/apps";
 import type { AppRule } from "../../shared/bot";
-import { useBotHost } from "../data";
 import { connectedApps, useAppsAccounts, useAppsCatalog, useAppsStatus } from "../library/apps";
 import { AppLogo } from "../library/parts";
 import { openLibrary } from "../navigation";
@@ -26,8 +25,7 @@ function ruleHint(rule: AppRule | undefined, accounts: readonly AppAccount[], ap
  * skill and MCP server pickers. Apps are connected in Skills & Tools; a row
  * opens the bot's limits on the app.
  */
-export function AppsPicker({ colors, bot, localHost, onPatch }: Pick<PanelProps, "colors" | "bot" | "localHost" | "onPatch">) {
-  const host = useBotHost(localHost);
+export function AppsPicker({ colors, bot, onPatch }: Pick<PanelProps, "colors" | "bot" | "onPatch">) {
   const status = useAppsStatus();
   const configured = status.data?.configured ?? false;
   const accounts = useAppsAccounts(configured);
@@ -45,11 +43,10 @@ export function AppsPicker({ colors, bot, localHost, onPatch }: Pick<PanelProps,
       trailing={<SectionLink colors={colors} icon="ArrowUpRight" label="Skills & Tools" onPress={() => openLibrary({ kind: "apps" })} />}
     >
       <SettingsCard>
-        {!host.isLocal ? <CardNote colors={colors} text="Only bots on this host can use connected apps" /> : null}
-        {host.isLocal && status.data && !configured ? <CardNote colors={colors} text="Not set up yet" /> : null}
-        {host.isLocal && configured && accounts.isLoading ? <CardNote colors={colors} loading text="Loading..." /> : null}
-        {host.isLocal && configured && !accounts.isLoading && apps.length === 0 ? <CardNote colors={colors} text="No apps connected yet" /> : null}
-        {host.isLocal && configured
+        {status.data && !configured ? <CardNote colors={colors} text="Not set up yet" /> : null}
+        {configured && accounts.isLoading ? <CardNote colors={colors} loading text="Loading..." /> : null}
+        {configured && !accounts.isLoading && apps.length === 0 ? <CardNote colors={colors} text="No apps connected yet" /> : null}
+        {configured
           ? apps.map((app) => (
               <PressableRow key={app.slug} colors={colors} accessibilityLabel={`${app.name} tools and account`} onPress={() => setEditing(app.slug)}>
                 {({ hovered }) => (

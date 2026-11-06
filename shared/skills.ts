@@ -67,12 +67,6 @@ export function learnPrompt(focus = ""): string {
   return `Turn what you just did into a reusable skill: the steps that worked, what to check, and what a good result looks like.${about} Then propose it with the propose_skill tool so I can review it. Don't write the skill file yourself.`;
 }
 
-/** The message /learn sends, or null when the text isn't /learn. */
-export function expandLearn(text: string): string | null {
-  const match = /^\/learn(?:\s+([\s\S]*))?$/.exec(text.trim());
-  return match ? learnPrompt(match[1] ?? "") : null;
-}
-
 /**
  * Things worth a second look before a skill reaches a bot, as OpenMausBot's
  * scanSkillText flags them. They warn; the user decides.

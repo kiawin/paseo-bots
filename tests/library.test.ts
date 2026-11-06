@@ -25,7 +25,6 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     skillIds: [],
     apps: [],
     appRules: {},
-    voice: { name: null, readReplies: false },
     contactBots: "ask",
     routines: [],
     playbooks: [],

@@ -4,15 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import type { AppSignIn } from "../../../shared/apps";
-import { chatBotRpc } from "../../../shared/rpc";
-import { useAppsAccounts, useAppsCatalog } from "../../library/apps";
-import { AppLogo } from "../../library/parts";
-import { errorText } from "../../native";
-import { StatusBadge } from "../../panel/controls";
-import { ui } from "../../typography";
-import { useBotSettings } from "../../useBotSettings";
-import { CardButton } from "./ui";
+import type { AppSignIn } from "../../shared/apps";
+import { chatBotRpc } from "../../shared/rpc";
+import { useAppsAccounts, useAppsCatalog } from "../library/apps";
+import { AppLogo } from "../library/parts";
+import { errorText } from "../native";
+import { StatusBadge } from "../panel/controls";
+import { ui } from "../typography";
+import { useBotSettings } from "../useBotSettings";
+import { CardButton } from "./CardButton";
 
 type Colors = PluginTheme["colors"];
 

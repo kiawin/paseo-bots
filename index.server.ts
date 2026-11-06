@@ -1,12 +1,12 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { botHomeOf, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
+import { botHomeOf, botIdAt, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { botAgentConfig, nameBotChat } from "./server/agent-config";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
-import { registerGenUiHandlers } from "./server/genui";
+import { botRunbooks, deleteRunbook, readRunbook, writeRunbook } from "./server/runbooks";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
@@ -18,9 +18,8 @@ import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
 import { BOT_TOOLS } from "./server/tools";
-import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
-import { syncBotWorkspaceTitle } from "./shared/chat";
+import { ensureBotWorkspace, syncBotWorkspaceTitle, workspaceFolder } from "./shared/chat";
 import { shellCommand } from "./shared/commands";
 import {
   commandAllowRpc,
@@ -51,7 +50,10 @@ import {
   avatarRemoveKeyRpc,
   avatarSetKeyRpc,
   botHomeRpc,
+  botWorkspaceRpc,
+  botWorkspacesRpc,
   chatBotRpc,
+  workspaceBotRpc,
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
@@ -61,6 +63,10 @@ import {
   appsSetKeyRpc,
   appsStatusRpc,
   routineRunNowRpc,
+  runbookDeleteRpc,
+  runbookListRpc,
+  runbookReadRpc,
+  runbookWriteRpc,
   routineStatusRpc,
   routineWebhookRpc,
   skillDeleteRpc,
@@ -68,11 +74,9 @@ import {
   skillReadRpc,
   skillWriteRpc,
   systemPromptRpc,
-  uploadRpc,
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
-  const stopGenUi = registerGenUiHandlers(server);
   try {
     migrateRenamedPluginData();
   } catch (error) {
@@ -123,6 +127,30 @@ export default function contribute(server: PluginServerContext) {
     return { path: await homeOf(botId) };
   });
   server.handle(botHomeRpc, ({ botId }) => ({ path: botHomeOf(botId) }));
+  server.handle(botWorkspaceRpc, async ({ botId }, context) => {
+    attach(context);
+    const bot = await host.bot(botId);
+    if (!bot) throw new Error("This bot no longer exists.");
+    const home = await ensureBotHome(bot);
+    return { workspaceId: (await ensureBotWorkspace(context.paseo, bot, home.path)).id };
+  });
+  server.handle(botWorkspacesRpc, async (_input, context) => {
+    attach(context);
+    const { entries } = await context.paseo.workspaces.list();
+    const workspaces: { botId: string; name: string; avatar: (typeof bots)[number]["avatar"]; workspaceId: string }[] = [];
+    const bots = await host.bots();
+    for (const bot of bots) {
+      const home = botHomeOf(bot.id);
+      const workspace = home && !bot.archived ? entries.find((entry) => workspaceFolder(entry) === home) : undefined;
+      if (workspace) workspaces.push({ botId: bot.id, name: bot.name, avatar: bot.avatar, workspaceId: workspace.id });
+    }
+    return { workspaces };
+  });
+  server.handle(workspaceBotRpc, async ({ workspaceId }, context) => {
+    attach(context);
+    const workspace = (await context.paseo.workspaces.list()).entries.find((entry) => entry.id === workspaceId);
+    return { botId: workspace ? await botIdAt(workspaceFolder(workspace)) : null };
+  });
   server.handle(chatBotRpc, async ({ agentId }, context) => {
     attach(context);
     return { botId: (await host.chatOf(agentId))?.botId ?? null };
@@ -147,6 +175,27 @@ export default function contribute(server: PluginServerContext) {
     return { ok: true };
   });
   server.handle(memoryLogRpc, async ({ botId, day }) => ({ ...(await listLogDays(botId)), text: day ? (await readLogDay(botId, day)).text : null }));
+  server.handle(runbookListRpc, async ({ botId }) => {
+    const bot = await host.bot(botId);
+    if (!bot) return { folder: null, runbooks: [] };
+    const { folder, runbooks } = await botRunbooks(bot);
+    return { folder, runbooks: runbooks.map(({ file, description }) => ({ file, description })) };
+  });
+  server.handle(runbookReadRpc, async ({ botId, file }) => {
+    const bot = await host.bot(botId);
+    const seed = bot && !botHomeOf(botId) ? (await botRunbooks(bot)).runbooks.find((entry) => entry.file === file) : undefined;
+    return seed ? { text: seed.text ?? "" } : readRunbook(botId, file);
+  });
+  server.handle(runbookWriteRpc, async ({ botId, file, text }) => {
+    await homeOf(botId);
+    await writeRunbook(botId, file, text);
+    return { ok: true };
+  });
+  server.handle(runbookDeleteRpc, async ({ botId, file }) => {
+    await homeOf(botId);
+    await deleteRunbook(botId, file);
+    return { ok: true };
+  });
   server.handle(memoryLogDeleteRpc, ({ botId, day }) => deleteLogDay(botId, day));
   server.handle(skillImportRpc, importSkills);
   server.handle(skillReadRpc, readSkill);
@@ -186,7 +235,6 @@ export default function contribute(server: PluginServerContext) {
   server.handle(importBotRpc, importBot);
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
-  server.handle(uploadRpc, async ({ botId, ...file }) => saveUpload(await homeOf(botId), file));
   server.before("agent.create", async ({ request }, context) => {
     host.attach(context.paseo);
     return botAgentConfig(host, relay, request);
@@ -217,7 +265,6 @@ export default function contribute(server: PluginServerContext) {
 
   return () => {
     stopSync();
-    stopGenUi();
     scheduler.stop();
     relay.stop();
   };

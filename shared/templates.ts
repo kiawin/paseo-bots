@@ -77,7 +77,6 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     skillIds: [],
     apps: [],
     appRules: {},
-    voice: { name: null, readReplies: false },
     contactBots: "ask",
     routines: [],
     playbooks: [],

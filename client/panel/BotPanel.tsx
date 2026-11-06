@@ -9,14 +9,14 @@ import { ui } from "../typography";
 import { AccessSection, ModelSection, PermissionsSection } from "./AgentSections";
 import { Alert, SearchField, useCompact } from "./controls";
 import { IdentitySection } from "./IdentitySection";
-import { MemorySection, PlaybooksSection, SkillsSection, SoulSection } from "./KnowledgeSections";
+import { MemorySection, RunbooksSection, SkillsSection, SoulSection } from "./KnowledgeSections";
 import { HistorySection, OverviewSection, UsageSection } from "./OverviewSections";
 import { RoutinesSection } from "./RoutinesSection";
 import { tooltip } from "../ui/Tooltip";
 
 type Colors = PluginTheme["colors"];
 
-export type SectionId = "overview" | "identity" | "soul" | "skills" | "playbooks" | "memory" | "routines" | "access" | "model" | "permissions" | "history" | "usage";
+export type SectionId = "overview" | "identity" | "soul" | "skills" | "runbooks" | "memory" | "routines" | "access" | "model" | "permissions" | "history" | "usage";
 
 interface SectionEntry {
   id: SectionId;
@@ -36,7 +36,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     label: "Bot",
     sections: [
       { id: "overview", label: "Overview", icon: "LayoutDashboard", rows: ["Set up with the bot", "System prompt"], keywords: "summary setup prompt preview tokens" },
-      { id: "identity", label: "Identity", icon: "IdCard", rows: ["Avatar", "Colour", "Shape", "Image URL", "Name", "Title", "Blurb", "Voice", "Read replies aloud"], keywords: "description picture color face upload generate speech speak tts" },
+      { id: "identity", label: "Identity", icon: "IdCard", rows: ["Avatar", "Colour", "Shape", "Image URL", "Name", "Title", "Blurb"], keywords: "description picture color face upload generate" },
       { id: "soul", label: "Soul", icon: "ScrollText", rows: ["Standing instructions"], keywords: "system prompt soul behaviour behavior" },
     ],
   },
@@ -44,7 +44,7 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
     label: "Knowledge",
     sections: [
       { id: "skills", label: "Skills", icon: "Puzzle", rows: ["Library skills"], keywords: "skill github SKILL.md library" },
-      { id: "playbooks", label: "Playbooks", icon: "BookOpenCheck", rows: ["New playbook", "Trigger words", "Steps"], keywords: "playbook process guidance triggers steps procedure" },
+      { id: "runbooks", label: "Runbooks", icon: "BookOpenCheck", rows: ["New runbook", "Steps"], keywords: "runbook playbook process guidance steps procedure" },
       { id: "memory", label: "Memory", icon: "Brain", rows: ["MEMORY.md", "Topic files", "Changes", "Daily log", "New topic file"], keywords: "memory notes remember undo journal log" },
     ],
   },
@@ -55,8 +55,8 @@ const GROUPS: { label: string; sections: SectionEntry[] }[] = [
   {
     label: "Agent",
     sections: [
-      { id: "access", label: "Access", icon: "KeyRound", rows: ["Working folder", "Paseo tools", "MCP servers", "Connected apps", "Always allowed"], keywords: "folder directory path mcp tools apps composio gmail slack grants library" },
-      { id: "model", label: "Model", icon: "Sparkles", rows: ["Host", "Agent profile", "Provider", "Model", "Thinking"], keywords: "effort reasoning" },
+      { id: "access", label: "Access", icon: "KeyRound", rows: ["Paseo tools", "MCP servers", "Connected apps", "Always allowed"], keywords: "mcp tools apps composio gmail slack grants library" },
+      { id: "model", label: "Model", icon: "Sparkles", rows: ["Provider", "Model", "Thinking", "Agent profile"], keywords: "effort reasoning" },
       { id: "permissions", label: "Permissions", icon: "Shield", rows: ["Mode", "Contact other bots", "Allowed commands"], keywords: "approval permissions ask auto bots contact delegate commands allowlist shell" },
     ],
   },
@@ -179,8 +179,8 @@ function renderSection(id: SectionId, props: PanelProps): ReactNode {
       return <SoulSection {...props} />;
     case "skills":
       return <SkillsSection {...props} />;
-    case "playbooks":
-      return <PlaybooksSection {...props} />;
+    case "runbooks":
+      return <RunbooksSection {...props} />;
     case "memory":
       return <MemorySection {...props} />;
     case "routines":

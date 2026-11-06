@@ -1,7 +1,8 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runbookDescription, RUNBOOKS_FOLDER } from "../shared/playbooks";
-import { botDataPath } from "./bot-home";
+import type { Bot } from "../shared/bot";
+import { playbookRunbook, runbookDescription, runbookFileName, RUNBOOKS_FOLDER } from "../shared/playbooks";
+import { botDataPath, botHomeOf } from "./bot-home";
 
 export function runbooksFolder(botId: string): string {
   return join(botDataPath(botId), RUNBOOKS_FOLDER);
@@ -38,4 +39,16 @@ export async function writeRunbook(botId: string, file: string, text: string): P
 
 export async function deleteRunbook(botId: string, file: string): Promise<void> {
   await rm(runbookPath(botId, file), { force: true });
+}
+
+/** The bot's runbooks; before it has a folder, the playbooks it will start with (ensureBotHome writes them). */
+export async function botRunbooks(bot: Pick<Bot, "id" | "playbooks">): Promise<{ folder: string | null; runbooks: { file: string; description: string; text?: string }[] }> {
+  if (botHomeOf(bot.id)) return { folder: runbooksFolder(bot.id), runbooks: await listRunbooks(bot.id) };
+  const runbooks = bot.playbooks
+    .filter((playbook) => playbook.instructions.trim())
+    .map((playbook) => {
+      const text = playbookRunbook(playbook);
+      return { file: `${runbookFileName(playbook.name)}.md`, description: runbookDescription(text), text };
+    });
+  return { folder: null, runbooks };
 }
