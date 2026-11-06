@@ -50,6 +50,18 @@ describe("bot chats started anywhere", () => {
     expect(await botAgentConfig(host, relay, { config: { provider: "claude", cwd: archived.path } })).toBeUndefined();
   });
 
+  it("switches off the user's Codex setup only where Paseo takes the feature flags", async () => {
+    const { botAgentConfig, ensureBotHome, relay } = await setup();
+    const coder = makeBot({ id: "bot-c", name: "Coder", provider: "codex" });
+    const host = fakeHost([coder]);
+    const { path } = await ensureBotHome(coder);
+    const codex = { config: { provider: "codex", cwd: path, providerOptions: { features: { multi_agent_v2: true } } } };
+    const on = await botAgentConfig(host, relay, codex, { codexFeatures: true });
+    expect(on?.config.providerOptions).toEqual({ features: { multi_agent_v2: true, plugins: false, hooks: false, memories: false, apps: false } });
+    const off = await botAgentConfig(host, relay, codex);
+    expect(off?.config.providerOptions).toEqual({ features: { multi_agent_v2: true } });
+  });
+
   it("pairs a new chat's tools key with its agent id", async () => {
     const { botAgentConfig, nameBotChat, host, relay, chats, path } = await setup();
     const result = await botAgentConfig(host, relay, { config: { provider: "claude", cwd: path } });

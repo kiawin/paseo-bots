@@ -20,7 +20,7 @@ type CreateRequest = PluginBeforeRequests["agent.create"];
  * asking. Paseo waits for this on every new agent on the host, so any other
  * folder returns at once.
  */
-export async function botAgentConfig(host: BotsHost, relay: Relay, request: CreateRequest): Promise<CreateRequest | undefined> {
+export async function botAgentConfig(host: BotsHost, relay: Relay, request: CreateRequest, options: { codexFeatures?: boolean } = {}): Promise<CreateRequest | undefined> {
   const botId = await botIdAt(request.config.cwd);
   if (!botId) return undefined;
   const bot = await host.bot(botId);
@@ -30,7 +30,7 @@ export async function botAgentConfig(host: BotsHost, relay: Relay, request: Crea
   const chatKey = newUuid();
   const plugin = { tools: await relay.mountTools(bot.id, chatKey), apps: bot.apps.length ? await relay.mountApps(bot.id) : null };
   // Paseo's MCP server configs are the same shapes as the bot's.
-  const config = applyBotConfig(request.config as typeof request.config & BotSessionConfig, bot, library, prompt.systemPrompt, plugin);
+  const config = applyBotConfig(request.config as typeof request.config & BotSessionConfig, bot, library, prompt.systemPrompt, plugin, options);
   return { config, env: { ...request.env, [CHAT_KEY_ENV]: chatKey } };
 }
 
