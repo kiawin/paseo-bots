@@ -8,9 +8,8 @@ import { requestIntent } from "./client/intent";
 import { BotsSettings } from "./client/settings/BotsSettings";
 import { installTooltips } from "./client/ui/Tooltip";
 import { appSignIns } from "./shared/apps";
-import { BOT_LABEL } from "./shared/bot";
 import { proposalIdOf } from "./shared/proposals";
-import { APP_SIGN_IN_CARD, AppSignInSchema, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
+import { APP_SIGN_IN_CARD, AppSignInSchema, chatBotRpc, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
 import { LEARN_COMMAND, learnPrompt } from "./shared/skills";
 
 export default function contribute(client: PluginClientContext) {
@@ -56,7 +55,7 @@ export default function contribute(client: PluginClientContext) {
     ...LEARN_COMMAND,
     context: "agent",
     async onSubmit({ agent, args, paseo }) {
-      if (!agent.labels[BOT_LABEL]) throw new Error("/learn works in bot chats.");
+      if (!(await client.rpc(chatBotRpc, { agentId: agent.id })).botId) throw new Error("/learn works in bot chats.");
       await paseo.agents.ref(agent.id).send(learnPrompt(args));
     },
   });

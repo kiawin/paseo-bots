@@ -5,7 +5,7 @@ import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from 
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import { renderPlaybooks } from "./playbooks";
 
-/** Agent label carrying the bot id. Chats are found by filtering on it. */
+/** Agent label carrying the bot id, set on chats the plugin starts. A chat's folder says whose it is; the label covers chats from before bots had their own folders. */
 export const BOT_LABEL = "paseo-bots.bot";
 
 const StringRecord = z.record(z.string(), z.string());

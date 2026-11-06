@@ -76,4 +76,54 @@ describe("bot folders", () => {
     expect(await readFile(join(path, "icon.png"))).toEqual(png);
     expect(await lstat(join(path, "icon.svg")).catch(() => null)).toBeNull();
   });
+
+  it("finds the bot a folder belongs to, through the old links too", async () => {
+    const { botIdAt, ensureBotHome, legacyBotsPath } = await import("../server/bot-home");
+    await mkdir(join(legacyBotsPath(), "bot-l"), { recursive: true });
+    const { path } = await ensureBotHome(makeBot({ id: "bot-l", name: "Linked" }));
+    await mkdir(join(path, "sub"));
+    expect(await botIdAt(path)).toBe("bot-l");
+    expect(await botIdAt(join(path, "sub"))).toBe("bot-l");
+    expect(await botIdAt(join(legacyBotsPath(), "bot-l"))).toBe("bot-l");
+    expect(await botIdAt(paseoHome)).toBeNull();
+  });
+
+  it("tells a chat's bot by its folder, or by its label for older chats", async () => {
+    const { ensureBotHome } = await import("../server/bot-home");
+    const { fakeHost } = await import("./helpers");
+    const { path } = await ensureBotHome(makeBot({ id: "bot-f", name: "Folder" }));
+    const agents: Record<string, { id: string; cwd: string; labels: Record<string, string>; title: string | null }> = {
+      started: { id: "started", cwd: path, labels: {}, title: "From Paseo" },
+      old: { id: "old", cwd: "/somewhere/else", labels: { "paseo-bots.bot": "bot-x" }, title: null },
+      other: { id: "other", cwd: "/somewhere/else", labels: {}, title: null },
+    };
+    const host = fakeHost([]);
+    host.attach({ agents: { ref: (id: string) => ({ refresh: async () => ({ agent: agents[id] }) }) } } as never);
+    expect((await host.chatOf("started"))?.botId).toBe("bot-f");
+    expect((await host.chatOf("old"))?.botId).toBe("bot-x");
+    expect(await host.chatOf("other")).toBeNull();
+  });
+});
+
+describe("listBotChats", () => {
+  it("merges the bot's project chats with older labelled ones, newest first", async () => {
+    const { listBotChats } = await import("../shared/chat");
+    const calls: unknown[] = [];
+    const api = {
+      projects: { list: async () => ({ projects: [{ projectKey: "k-scout", projectRootPath: "/bots/scout/" }] }) },
+      agents: {
+        list: async (options: { filter: { labels?: Record<string, string>; projectKeys?: string[] } }) => {
+          calls.push(options.filter);
+          return options.filter.projectKeys
+            ? { entries: [{ agent: { id: "a", updatedAt: "2026-11-02T00:00:00Z" } }, { agent: { id: "b", updatedAt: "2026-11-03T00:00:00Z" } }] }
+            : { entries: [{ agent: { id: "b", updatedAt: "2026-11-03T00:00:00Z" } }, { agent: { id: "c", updatedAt: "2026-11-01T00:00:00Z" } }] };
+        },
+      },
+    };
+    expect((await listBotChats(api, "bot-1", "/bots/scout")).map((chat) => chat.id)).toEqual(["b", "a", "c"]);
+    // Without a folder, only labelled chats.
+    calls.length = 0;
+    expect((await listBotChats(api, "bot-1", null)).map((chat) => chat.id)).toEqual(["b", "c"]);
+    expect(calls).toEqual([{ labels: { "paseo-bots.bot": "bot-1" }, includeArchived: false }]);
+  });
 });

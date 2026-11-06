@@ -18,6 +18,20 @@ export const ensureBotHomeRpc = defineRpc({
   output: z.object({ path: z.string() }),
 });
 
+/** The bot's folder without creating it; null until it has one. */
+export const botHomeRpc = defineRpc({
+  name: "bots.home",
+  input: z.object({ botId: BotId }),
+  output: z.object({ path: z.string().nullable() }),
+});
+
+/** The bot a chat belongs to (by its folder, or its label for older chats); null for other agents. */
+export const chatBotRpc = defineRpc({
+  name: "bots.chat-bot",
+  input: z.object({ agentId: z.string().min(1).max(200) }),
+  output: z.object({ botId: z.string().nullable() }),
+});
+
 /** Sent by the app on start so the daemon side can run routines. */
 export const helloRpc = defineRpc({
   name: "bots.hello",
