@@ -618,14 +618,30 @@ export function claudeBotArgs(folder: string | undefined): Record<string, string
 }
 
 /**
+ * Codex features that bring the user's own Codex setup into a chat: plugins
+ * (with their MCP servers and skills), hooks, memories and ChatGPT apps. Codex
+ * merges these with the user's [features], so the rest keep their values.
+ */
+export const CODEX_BOT_FEATURES: Readonly<Record<string, boolean>> = { plugins: false, hooks: false, memories: false, apps: false };
+
+/**
  * A new chat's config as the bot's settings say, whatever the chat asked for:
  * the bot's provider, model, mode and thinking (one the bot leaves on Default
  * is the provider's default), its system prompt, only its MCP servers and the
  * plugin's, and only the tools it may use without asking. A Claude chat also
- * skips the user's own Claude Code setup (claudeBotArgs). Paseo still adds
- * its own tools, and the user can switch model or mode inside a chat once it runs.
+ * skips the user's own Claude Code setup (claudeBotArgs), and a Codex chat
+ * the user's Codex plugins, hooks, memories and apps when `codexFeatures` says
+ * Paseo takes those options (CODEX_BOT_FEATURES). Paseo still adds its own
+ * tools, and the user can switch model or mode inside a chat once it runs.
  */
-export function applyBotConfig<Config extends BotSessionConfig>(config: Config, bot: Bot, library: Library, systemPrompt: string, plugin: PluginServers = {}): Config & BotSessionConfig {
+export function applyBotConfig<Config extends BotSessionConfig>(
+  config: Config,
+  bot: Bot,
+  library: Library,
+  systemPrompt: string,
+  plugin: PluginServers = {},
+  { codexFeatures = false }: { codexFeatures?: boolean } = {},
+): Config & BotSessionConfig {
   const provider = bot.provider || config.provider;
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
@@ -651,6 +667,10 @@ export function applyBotConfig<Config extends BotSessionConfig>(config: Config, 
     const options = config.providerOptions ?? {};
     const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
     next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd) } };
+  }
+  if (provider === "codex" && codexFeatures) {
+    const options = config.providerOptions ?? {};
+    next.providerOptions = { ...options, features: { ...((options.features ?? {}) as Record<string, unknown>), ...CODEX_BOT_FEATURES } };
   }
   if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
   else delete next.mcpServers;

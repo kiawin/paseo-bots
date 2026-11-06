@@ -1,7 +1,8 @@
-import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
+import type { PluginHandlerContext, PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { botHomeOf, botIdAt, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { botAgentConfig, nameBotChat } from "./server/agent-config";
+import { botTerminal, type TerminalRequest } from "./server/terminal";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
@@ -235,9 +236,24 @@ export default function contribute(server: PluginServerContext) {
   server.handle(importBotRpc, importBot);
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
+  // Paseo versions with terminal.create.before also take any Codex feature flag in
+  // providerOptions (one change added both); older ones reject unknown flags, which
+  // would fail the chat, so Codex chats only switch features off where the hook exists.
+  type TerminalHook = (name: string, handler: (input: { request: TerminalRequest }, context: PluginHookContext) => Promise<TerminalRequest | undefined>) => () => void;
+  const addHook = (server as unknown as { addHook?: TerminalHook }).addHook?.bind(server);
+  let codexFeatures = false;
+  try {
+    addHook?.("terminal.create.before", async ({ request }, context) => {
+      host.attach(context.paseo);
+      return botTerminal(host, relay, request);
+    });
+    codexFeatures = Boolean(addHook);
+  } catch {
+    // This Paseo has no terminal hook: the bot's terminals run the CLI as it is.
+  }
   server.before("agent.create", async ({ request }, context) => {
     host.attach(context.paseo);
-    return botAgentConfig(host, relay, request);
+    return botAgentConfig(host, relay, request, { codexFeatures });
   });
   server.before("agent.session_open", async ({ request }) => {
     await nameBotChat(relay, request).catch((error: unknown) => console.error("paseo-bots: couldn't name a chat's tools", error));

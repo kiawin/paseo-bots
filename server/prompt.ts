@@ -33,7 +33,7 @@ export interface ChatStart {
   team?: { group: BotGroup; bots: Bot[] };
 }
 
-export async function promptContext(bot: Bot, library: Library, paseoTools: boolean, start: ChatStart = {}): Promise<PromptContext> {
+export async function promptContext(bot: Bot, library: Library, paseoTools: boolean, start: ChatStart = {}, botTools = true): Promise<PromptContext> {
   const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
@@ -53,7 +53,7 @@ export async function promptContext(bot: Bot, library: Library, paseoTools: bool
     team,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
-    botTools: true,
+    botTools,
     apps: await botApps(bot),
   };
 }
@@ -69,11 +69,14 @@ async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<b
   }
 }
 
-/** The system prompt for a new chat; `settings` supplies the bot's team. */
-export async function systemPrompt({ bot }: { bot: Bot }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
+/**
+ * The system prompt for a new chat; `settings` supplies the bot's team. A
+ * terminal running the bot's CLI gets neither Paseo's tools nor the plugin's.
+ */
+export async function systemPrompt({ bot, terminal = false }: { bot: Bot; terminal?: boolean }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
   const group = teamOf(bot.id, settings?.groups ?? []);
   const start: ChatStart = group && settings ? { team: { group, bots: settings.bots } } : {};
-  const context = await promptContext(bot, library, await paseoToolsOn(paseo, bot.provider), start);
+  const context = await promptContext(bot, library, !terminal && (await paseoToolsOn(paseo, bot.provider)), start, !terminal);
   return {
     systemPrompt: composeSystemPrompt(bot, context),
     sections: promptSections(bot, context),
