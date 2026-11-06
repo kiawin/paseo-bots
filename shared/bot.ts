@@ -579,25 +579,49 @@ export interface BotSessionConfig {
   mcpServers?: Record<string, McpServerConfig>;
   toolPolicy?: { preapproved: ToolGrant[] };
   providerOptions?: Record<string, unknown>;
+  cwd?: string;
 }
 
 /**
- * Claude Code flags that keep a bot's chat to what its settings say: no user
- * settings (~/.claude/settings.json hooks, plugins and permissions, and
- * ~/.claude/CLAUDE.md), and only the MCP servers Paseo passes in, so no user or
- * project .mcp.json servers. The login and session files stay where they are.
- * The bot's own folder still counts as the project, so a CLAUDE.md or
- * .claude/settings.json there applies. Paseo hands extraArgs to the CLI, and
- * the last --setting-sources wins.
+ * The CLAUDE.md and rule files Claude Code would read from the folders above
+ * `folder`. It reads project memory from every parent folder, so a bot folder
+ * under the user's home would also get ~/.claude/CLAUDE.md that way.
  */
-export const CLAUDE_BOT_FLAGS: Record<string, string | null> = { "setting-sources": "project,local", "strict-mcp-config": null };
+export function parentClaudeMdFiles(folder: string): string[] {
+  const separator = folder.includes("/") || !folder.includes("\\") ? "/" : "\\";
+  const parts = folder.replace(/[\\/]+$/, "").split(/[\\/]/);
+  const files: string[] = [];
+  for (let end = parts.length - 1; end >= 1; end--) {
+    const dir = parts.slice(0, end).join(separator);
+    for (const name of ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/rules/**"]) files.push(`${dir}/${name}`);
+  }
+  return files;
+}
+
+/**
+ * Claude Code flags that keep a bot's chat (working in `folder`) to what its
+ * settings say. No user settings: none of ~/.claude/settings.json's hooks,
+ * plugins and permissions. No CLAUDE.md from the user or from any folder
+ * above the bot's. Only the MCP servers Paseo passes in, so none of the user's
+ * or a project's .mcp.json servers. The login and session files stay where
+ * they are. The bot's own folder still counts as the project, so a CLAUDE.md
+ * or .claude/settings.json there applies. Paseo hands extraArgs to the CLI
+ * after its own flags, and the last --setting-sources wins.
+ */
+export function claudeBotArgs(folder: string | undefined): Record<string, string | null> {
+  return {
+    "setting-sources": "project,local",
+    "strict-mcp-config": null,
+    ...(folder ? { settings: JSON.stringify({ claudeMdExcludes: parentClaudeMdFiles(folder) }) } : {}),
+  };
+}
 
 /**
  * A new chat's config as the bot's settings say, whatever the chat asked for:
  * the bot's provider, model, mode and thinking (one the bot leaves on Default
  * is the provider's default), its system prompt, only its MCP servers and the
  * plugin's, and only the tools it may use without asking. A Claude chat also
- * skips the user's own Claude Code settings (CLAUDE_BOT_FLAGS). Paseo still adds
+ * skips the user's own Claude Code setup (claudeBotArgs). Paseo still adds
  * its own tools, and the user can switch model or mode inside a chat once it runs.
  */
 export function applyBotConfig<Config extends BotSessionConfig>(config: Config, bot: Bot, library: Library, systemPrompt: string, plugin: PluginServers = {}): Config & BotSessionConfig {
@@ -625,7 +649,7 @@ export function applyBotConfig<Config extends BotSessionConfig>(config: Config, 
   if (provider === "claude") {
     const options = config.providerOptions ?? {};
     const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
-    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...CLAUDE_BOT_FLAGS } };
+    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd) } };
   }
   if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
   else delete next.mcpServers;
