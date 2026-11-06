@@ -16,14 +16,12 @@ export interface BotHost {
   /** Stable key for queries; the local host uses its own id. */
   key: string;
   label: string;
-  isLocal: boolean;
-  online: boolean;
 }
 
 /** The host that stores the bots, where every bot runs. */
 export function useBotHost(local: LocalHost): BotHost {
   const api = usePaseo();
-  return useMemo(() => ({ api, key: local.id, label: local.label, isLocal: true, online: true }), [api, local.id, local.label]);
+  return useMemo(() => ({ api, key: local.id, label: local.label }), [api, local.id, local.label]);
 }
 
 export function useProviders(host: BotHost) {
@@ -52,8 +50,7 @@ export function useBotChats(host: BotHost, botId: string) {
   return useQuery({
     queryKey: ["paseo-bots", "chats", host.key, botId],
     enabled: !!host.api,
-    // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
-    refetchInterval: host.isLocal ? false : 15_000,
+    // The host pushes agent updates (useChatInvalidation).
     queryFn: async (): Promise<PaseoAgent[]> => {
       const { path } = await botHome({ botId });
       return (await listBotChats(host.api!, botId, path)).filter((agent) => !agent.archivedAt);
@@ -110,4 +107,21 @@ export function usePaseoTools(host: BotHost, provider: string) {
     await queryClient.invalidateQueries({ queryKey: key });
   };
   return { state, loading: config.isLoading, turnOn };
+}
+
+type TimelinePage = Awaited<ReturnType<ReturnType<PaseoApi["agents"]["ref"]>["timeline"]["refetch"]>>;
+type ChatEntry = TimelinePage["entries"][number];
+
+/** A chat's whole timeline, oldest first, page by page (a transcript needs all of it). */
+export async function fullTimeline(api: PaseoApi, agentId: string): Promise<ChatEntry[]> {
+  const handle = api.agents.ref(agentId);
+  const bySeq = new Map<number, ChatEntry>();
+  let page = await handle.timeline.refetch({ direction: "tail", projection: "projected", limit: 200 });
+  for (let pages = 0; ; pages++) {
+    if (page.error) throw new Error(page.error);
+    for (const entry of page.entries) bySeq.set(entry.seqStart, entry);
+    if (pages >= 100 || page.entries.length === 0 || !page.hasOlder || !page.startCursor) break;
+    page = await handle.timeline.refetch({ direction: "before", cursor: page.startCursor, projection: "projected", limit: 200 });
+  }
+  return [...bySeq.values()].sort((a, b) => a.seqStart - b.seqStart);
 }

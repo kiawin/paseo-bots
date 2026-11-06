@@ -1,11 +1,11 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { Text, View } from "react-native";
-import type { RoutineRunCard as RunCard } from "../../../shared/rpc";
-import { relativeTime } from "../../../shared/time";
-import { StatusBadge, type BadgeVariant } from "../../panel/controls";
-import { ui } from "../../typography";
-import { CardButton } from "./ui";
+import type { RoutineRunCard as RunCard } from "../../shared/rpc";
+import { relativeTime } from "../../shared/time";
+import { StatusBadge, type BadgeVariant } from "../panel/controls";
+import { ui } from "../typography";
+import { CardButton } from "./CardButton";
 
 type Colors = PluginTheme["colors"];
 

@@ -1,4 +1,3 @@
-import type { WireAttachment } from "./attachments";
 import { BOT_LABEL, defaultModelId, type Bot } from "./bot";
 
 /** Label on chats started by a routine, carrying the routine id. */
@@ -24,6 +23,7 @@ interface ChatWorkspace {
 }
 
 interface WorkspaceHandle {
+  readonly id: string;
   current(): ChatWorkspace | null;
   refresh(): Promise<ChatWorkspace | null>;
   setTitle(title: string): Promise<unknown>;
@@ -33,9 +33,6 @@ interface WorkspaceHandle {
       labels: Record<string, string>;
       prompt: string;
       title?: string;
-      images?: { data: string; mimeType: string }[];
-      attachments?: WireAttachment[];
-      clientMessageId?: string;
     }): Promise<{ readonly id: string }>;
   };
 }
@@ -65,7 +62,7 @@ export interface ChatApi {
 /** The bot's workspace: the one in its folder, or a new one, which makes the folder the bot's own project. */
 async function botWorkspace(api: ChatApi, home: string): Promise<{ handle: WorkspaceHandle; title: string | null }> {
   const { entries } = await api.workspaces.list();
-  const mine = entries.find((workspace) => normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(home));
+  const mine = entries.find((workspace) => workspaceFolder(workspace) === normalize(home));
   if (mine) return { handle: api.workspaces.ref(mine), title: mine.title ?? null };
   const handle = await api.workspaces.open(home);
   const snapshot = handle.current() ?? (await handle.refresh());
@@ -79,10 +76,15 @@ export async function ensureBotWorkspace(api: ChatApi, bot: Pick<Bot, "name">, h
   return handle;
 }
 
+/** The folder a workspace runs in. */
+export function workspaceFolder(workspace: Pick<ChatWorkspace, "workspaceDirectory" | "projectRootPath">): string {
+  return normalize(workspace.workspaceDirectory ?? workspace.projectRootPath);
+}
+
 /** Renames the bot's workspace after the bot is renamed; does nothing before it has one. */
 export async function syncBotWorkspaceTitle(api: ChatApi, bot: Pick<Bot, "name">, home: string): Promise<void> {
   const { entries } = await api.workspaces.list();
-  const mine = entries.find((workspace) => normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(home));
+  const mine = entries.find((workspace) => workspaceFolder(workspace) === normalize(home));
   if (mine && mine.title !== bot.name) await api.workspaces.ref(mine).setTitle(bot.name);
 }
 
@@ -114,9 +116,6 @@ export interface StartChatInput {
   /** Defaults to Paseo's own title derived from the prompt. */
   title?: string;
   labels?: Record<string, string>;
-  images?: { data: string; mimeType: string }[];
-  attachments?: WireAttachment[];
-  clientMessageId?: string;
 }
 
 /**
@@ -135,9 +134,6 @@ export async function startBotChat(api: ChatApi, input: StartChatInput): Promise
     labels: { [BOT_LABEL]: bot.id, ...input.labels },
     prompt: input.prompt,
     ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),
-    ...(input.images?.length ? { images: input.images } : {}),
-    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-    ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
   });
   return agent.id;
 }

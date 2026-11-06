@@ -263,17 +263,26 @@ export async function migrateBotHomes(bots: readonly Bot[]): Promise<void> {
 
 const ICON_FILES = ["icon.svg", "icon.png"] as const;
 
-/** The project icon file for an avatar: an uploaded PNG or SVG as it is, otherwise the generated face. */
+/**
+ * The project icon file for an avatar. Paseo reads SVG, PNG and ICO icons, so an
+ * uploaded PNG or SVG is written as it is, and other pictures (the app stores
+ * uploads as WebP) go inside an SVG clipped to the avatar's shape. Links to
+ * pictures elsewhere fall back to the generated face.
+ */
 function iconFile(avatar: Bot["avatar"]): { name: (typeof ICON_FILES)[number]; data: Buffer } {
-  const image = /^data:image\/(png|svg\+xml);base64,(.+)$/.exec(avatar.imageUrl ?? "");
-  if (image) return { name: image[1] === "png" ? "icon.png" : "icon.svg", data: Buffer.from(image[2]!, "base64") };
-  return { name: "icon.svg", data: Buffer.from(avatarSvg(avatar)) };
+  const image = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(avatar.imageUrl ?? "");
+  if (!image) return { name: "icon.svg", data: Buffer.from(avatarSvg(avatar)) };
+  const [, type, base64] = image;
+  if (type === "image/png") return { name: "icon.png", data: Buffer.from(base64!, "base64") };
+  if (type === "image/svg+xml") return { name: "icon.svg", data: Buffer.from(base64!, "base64") };
+  const radius = avatar.shape === "square" ? 7.68 : avatar.shape === "rounded" ? 17.92 : 32;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64"><clipPath id="c"><rect width="64" height="64" rx="${radius}"/></clipPath><image width="64" height="64" clip-path="url(#c)" preserveAspectRatio="xMidYMid slice" href="data:${type};base64,${base64}" xlink:href="data:${type};base64,${base64}"/></svg>`;
+  return { name: "icon.svg", data: Buffer.from(svg) };
 }
 
 /**
  * Paseo shows an icon file in a project's folder as the project icon, so the
- * bot's folder gets its avatar. Other pictures (JPEG, links) fall back to the
- * generated face. Rewritten only when it changes.
+ * bot's folder gets its avatar. Rewritten only when it changes.
  */
 export async function writeBotIcon(home: string, avatar: Bot["avatar"]): Promise<void> {
   const icon = iconFile(avatar);

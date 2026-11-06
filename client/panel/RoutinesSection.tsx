@@ -77,7 +77,7 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
   const toast = useToast();
   const menu = useMenu();
   const queryClient = useQueryClient();
-  const records = useQuery({ queryKey: ROUTINES_KEY, queryFn: () => status({}), refetchInterval: 15_000, enabled: host.isLocal });
+  const records = useQuery({ queryKey: ROUTINES_KEY, queryFn: () => status({}), refetchInterval: 15_000 });
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
   const [runs, setRuns] = useState(false);
 
@@ -117,10 +117,6 @@ export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpen
     });
     if (confirmed) setRoutines(bot.routines.filter((entry) => entry.id !== routine.id));
   };
-
-  if (!host.isLocal) {
-    return <Alert colors={colors} description="Routines run on the host that stores the bot. Switch the bot to this host to schedule it." />;
-  }
 
   const now = new Date();
   const upcoming = bot.routines

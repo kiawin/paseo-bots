@@ -57,7 +57,7 @@ const LogoInput = z.object({
 
 const PlaybookInput = z.object({
   name: z.string().min(1).max(80),
-  triggers: z.array(z.string().min(1).max(60)).min(1).max(20).describe("Words or phrases that bring the playbook into a chat when its first message has one."),
+  triggers: z.array(z.string().min(1).max(60)).min(1).max(20).describe("Words or phrases for the jobs it covers; they say when to use the runbook."),
   instructions: z.string().min(1).max(20_000),
 });
 
@@ -93,7 +93,7 @@ const CreateBot = z.object({
   skills: Ids("Library skill ids to turn on.").optional(),
   mcp_servers: Ids("Library MCP servers to turn on, by name.").optional(),
   apps: z.array(AppInput).max(50).optional().describe("Connected apps it may use."),
-  playbooks: z.array(PlaybookInput).max(20).optional(),
+  playbooks: z.array(PlaybookInput).max(20).optional().describe("Its first runbooks, written into its runbooks folder when it first runs. Later the bot keeps its runbooks there itself."),
 });
 
 const UpdateBot = z.object({
@@ -110,8 +110,6 @@ const UpdateBot = z.object({
   remove_apps: Ids("App slugs it may no longer use.").optional(),
   allow_tools: Ids('MCP tools it may use without asking, as "server/tool".').optional(),
   disallow_tools: Ids('Tools to take off that list, as "server/tool".').optional(),
-  add_playbooks: z.array(PlaybookInput).max(20).optional().describe("Playbooks to add; one with the name of an existing playbook replaces it."),
-  remove_playbooks: Ids("Playbooks to remove, by name.").optional(),
 });
 
 const DeleteBot = z.object({ type: z.literal("delete_bot"), bot: Ref("The bot") });
@@ -401,13 +399,10 @@ function withGrants(bot: Bot, allow: readonly string[] = [], disallow: readonly 
   return { ...bot, alwaysAllow: [...grants] };
 }
 
-function withPlaybooks(bot: Bot, add: readonly z.infer<typeof PlaybookInput>[] = [], remove: readonly string[] = []): Bot {
+/** A new bot's first runbooks (its playbooks); one with the name of an earlier one replaces it. */
+function withPlaybooks(bot: Bot, add: readonly z.infer<typeof PlaybookInput>[] = []): Bot {
   let playbooks = [...bot.playbooks];
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-  for (const ref of remove) {
-    if (!playbooks.some((playbook) => same(playbook.name, ref))) throw new Error(`${bot.name} has no playbook called "${ref}".`);
-    playbooks = playbooks.filter((playbook) => !same(playbook.name, ref));
-  }
   for (const input of add) {
     const existing = playbooks.find((playbook) => same(playbook.name, input.name));
     const playbook = { id: existing?.id ?? newPlaybookId(), name: input.name.trim(), triggers: [...new Set(input.triggers.map((trigger) => trigger.trim()).filter(Boolean))], instructions: input.instructions.trim() };
@@ -483,7 +478,6 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       bot = withLibraryItems(bot, library, "mcp", change.add_mcp_servers, change.remove_mcp_servers);
       bot = withApps(bot, change.add_apps, change.remove_apps, context);
       bot = withGrants(bot, change.allow_tools, change.disallow_tools);
-      bot = withPlaybooks(bot, change.add_playbooks, change.remove_playbooks);
       return withBot(values, bot, context);
     }
     case "delete_bot": {
@@ -684,8 +678,6 @@ export function describeChange(change: Change): string {
         ...(change.remove_apps?.length ? [`no longer uses ${list(change.remove_apps)}`] : []),
         ...(change.allow_tools?.length ? [`uses ${list(change.allow_tools)} without asking`] : []),
         ...(change.disallow_tools?.length ? [`asks again before ${list(change.disallow_tools)}`] : []),
-        ...(change.add_playbooks?.length ? [`playbooks ${list(change.add_playbooks.map((playbook) => playbook.name))}`] : []),
-        ...(change.remove_playbooks?.length ? [`removes playbooks ${list(change.remove_playbooks)}`] : []),
       ];
       return `**${change.bot}**: ${parts.join("; ") || "no changes"}`;
     }
@@ -825,7 +817,6 @@ export function botDetails(values: BotSettingsValues, ref: string): string {
     botLine(bot, values),
     block("Blurb", bot.description),
     block("Instructions (Soul)", bot.soul),
-    block("Playbooks", bot.playbooks.map((playbook) => `- ${playbook.name} (triggers: ${list(playbook.triggers)}):\n${playbook.instructions}`).join("\n\n")),
     block("Routines", bot.routines.map((routine) => `- ${routine.name} (id ${routine.id}, ${routine.enabled ? describeSchedule(routine.schedule) : "paused"}):\n${routine.prompt}`).join("\n\n")),
     block("MCP servers", bot.mcpServerIds.map((id) => library.mcpServers.find((server) => server.id === id)?.name ?? id).join(", ")),
     block("Tools allowed without asking", bot.alwaysAllow.join(", ")),

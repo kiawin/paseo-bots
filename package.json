@@ -15,9 +15,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "paseo-plugin-genui": "0.3.3"
-  },
   "devDependencies": {
     "@getpaseo/client": "^0.14.0",
     "@getpaseo/plugin": "^0.14.0",

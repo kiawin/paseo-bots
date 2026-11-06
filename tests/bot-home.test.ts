@@ -75,6 +75,10 @@ describe("bot folders", () => {
     await writeBotIcon(path, { ...bot.avatar, imageUrl: `data:image/png;base64,${png.toString("base64")}` });
     expect(await readFile(join(path, "icon.png"))).toEqual(png);
     expect(await lstat(join(path, "icon.svg")).catch(() => null)).toBeNull();
+    // The app stores uploaded pictures as WebP, which Paseo doesn't read: it goes in an SVG.
+    await writeBotIcon(path, { ...bot.avatar, shape: "square", imageUrl: "data:image/webp;base64,UklGRg==" });
+    expect(await readFile(join(path, "icon.svg"), "utf8")).toContain('href="data:image/webp;base64,UklGRg=="');
+    expect(await lstat(join(path, "icon.png")).catch(() => null)).toBeNull();
   });
 
   it("finds the bot a folder belongs to, through the old links too", async () => {
@@ -125,5 +129,14 @@ describe("listBotChats", () => {
     calls.length = 0;
     expect((await listBotChats(api, "bot-1", null)).map((chat) => chat.id)).toEqual(["b", "c"]);
     expect(calls).toEqual([{ labels: { "paseo-bots.bot": "bot-1" }, includeArchived: false }]);
+  });
+});
+
+describe("chat titles", () => {
+  it("hides the bot-name prefix older chats carry", async () => {
+    const { displayTitle } = await import("../shared/chat");
+    expect(displayTitle("[Email Manager] Triage my inbox")).toBe("Triage my inbox");
+    expect(displayTitle("plain")).toBe("plain");
+    expect(displayTitle(null)).toBe("New chat");
   });
 });

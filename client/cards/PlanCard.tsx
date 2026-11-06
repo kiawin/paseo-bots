@@ -2,9 +2,9 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { PlanOutcome } from "../../../shared/tools";
-import { Markdown } from "../../Markdown";
-import { ui } from "../../typography";
+import type { PlanOutcome } from "../../shared/tools";
+import { Markdown } from "../Markdown";
+import { ui } from "../typography";
 
 type Colors = PluginTheme["colors"];
 

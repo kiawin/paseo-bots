@@ -1,9 +1,11 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { BotsSurface } from "./client/BotsSurface";
-import { NativeConnectCard } from "./client/chat/stream/ConnectCard";
-import { ProposalCard } from "./client/chat/stream/ProposalCard";
-import { RoutineRunCard } from "./client/chat/stream/RoutineRunCard";
+import { BOT_PANEL_ID, BotWorkspacePanel } from "./client/BotWorkspacePanel";
+import { installBotHeaderButtons } from "./client/header-buttons";
+import { NativeConnectCard } from "./client/cards/ConnectCard";
+import { ProposalCard } from "./client/cards/ProposalCard";
+import { RoutineRunCard } from "./client/cards/RoutineRunCard";
 import { requestIntent } from "./client/intent";
 import { BotsSettings } from "./client/settings/BotsSettings";
 import { installTooltips } from "./client/ui/Tooltip";
@@ -16,17 +18,11 @@ export default function contribute(client: PluginClientContext) {
   // Hands the daemon side its Paseo API so bot routines can run.
   void client.rpc(helloRpc, {}).catch(() => {});
   const removeTooltips = installTooltips();
-  client.addSurface("bots", (props) => (
-    <BotsSurface
-      {...props}
-      playAudio={async (dataUrl) => {
-        const comma = dataUrl.indexOf(",");
-        if (comma === -1) return;
-        const mimeType = /^data:([^;]+);base64$/i.exec(dataUrl.slice(0, comma))?.[1] ?? "audio/wav";
-        await client.playAudio({ base64: dataUrl.slice(comma + 1), mimeType });
-      }}
-    />
-  ));
+  // A bot opens in its own workspace with its panel in the explorer column; an open panel is focused, not doubled.
+  const openBotPanel = (workspaceId: string) => client.openPanel(BOT_PANEL_ID, { workspaceId, location: "explorer" });
+  client.addWorkspacePanel({ id: BOT_PANEL_ID, title: "Bot", icon: "Bot", locations: ["explorer", "workspace"], Component: BotWorkspacePanel });
+  const removeHeaderButtons = installBotHeaderButtons(client, openBotPanel);
+  client.addSurface("bots", (props) => <BotsSurface {...props} openBotPanel={openBotPanel} />);
   client.addSidebarItem({ id: "bots", title: "Bots", icon: "Bot", surface: "bots" });
   client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
   client.addCommandCenterItem({
@@ -93,5 +89,8 @@ export default function contribute(client: PluginClientContext) {
     schema: RoutineRunCardSchema,
     Component: ({ item, theme }) => <RoutineRunCard colors={theme.colors} card={item.data} />,
   });
-  return removeTooltips;
+  return () => {
+    removeHeaderButtons();
+    removeTooltips();
+  };
 }
