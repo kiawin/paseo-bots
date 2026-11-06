@@ -1,6 +1,7 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { botHomeOf, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
+import { botAgentConfig, nameBotChat } from "./server/agent-config";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
@@ -39,7 +40,6 @@ import {
   memoryReadRpc,
   memoryUndoRpc,
   memoryWriteRpc,
-  mountRpc,
   mcpProbeRpc,
   mcpSourcesRpc,
   proposalAcceptRpc,
@@ -167,10 +167,6 @@ export default function contribute(server: PluginServerContext) {
   server.handle(appsDisconnectRpc, disconnect);
   server.handle(appsRenameRpc, renameAccount);
   server.handle(appsToolsRpc, appTools);
-  server.handle(mountRpc, async ({ botId, agentId }) => {
-    const bot = await host.bot(botId);
-    return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
-  });
   server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
   server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
   server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));
@@ -191,6 +187,13 @@ export default function contribute(server: PluginServerContext) {
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
   server.handle(uploadRpc, async ({ botId, ...file }) => saveUpload(await homeOf(botId), file));
+  server.before("agent.create", async ({ request }, context) => {
+    host.attach(context.paseo);
+    return botAgentConfig(host, relay, request);
+  });
+  server.before("agent.session_open", async ({ request }) => {
+    await nameBotChat(relay, request).catch((error: unknown) => console.error("paseo-bots: couldn't name a chat's tools", error));
+  });
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));

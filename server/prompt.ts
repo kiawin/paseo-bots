@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import type { PaseoApi } from "./paseo";
 import { recentWork } from "../shared/activity";
-import { selectPlaybooks } from "../shared/playbooks";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import type { AppAccount, PromptApp } from "../shared/apps";
 import { accounts, catalog, readState } from "./composio";
@@ -9,6 +8,7 @@ import { botSkills, composeSystemPrompt, promptSections, type Bot, type BotGroup
 import { teamOf, teamPrompt } from "../shared/groups";
 import { linkBotSkills, skillSha } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
+import { listRunbooks, runbooksFolder } from "./runbooks";
 import { BOT_GENUI_INSTRUCTIONS } from "../shared/genui-instructions";
 
 /**
@@ -30,14 +30,11 @@ async function botApps(bot: Bot): Promise<PromptApp[]> {
 }
 
 export interface ChatStart {
-  /** The chat's first message, which picks the playbooks. */
-  message?: string;
   /** The bot's team and every bot, when it's on one. */
   team?: { group: BotGroup; bots: Bot[] };
 }
 
 export async function promptContext(bot: Bot, library: Library, paseoTools: boolean, start: ChatStart = {}): Promise<PromptContext> {
-  const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
   const team = start.team ? teamPrompt(start.team.group, bot, start.team.bots) : null;
   // Only skills whose SKILL.md is still what the user reviewed.
   const skills: typeof library.skills = [];
@@ -52,7 +49,8 @@ export async function promptContext(bot: Bot, library: Library, paseoTools: bool
     memory: await injectedMemory(bot.id),
     memoryPath: join(memoryFolder(bot.id), MAIN_MEMORY),
     recentWork: recentWork(await recentLogEntries(bot.id, 3), new Date()),
-    playbooks,
+    runbooksPath: runbooksFolder(bot.id),
+    runbooks: await listRunbooks(bot.id),
     team,
     skills: skills.map((skill) => ({ name: skill.id, description: skill.description, path: paths.get(skill.id)! })),
     paseoTools,
@@ -73,9 +71,9 @@ async function paseoToolsOn(paseo: PaseoApi | null, provider: string): Promise<b
 }
 
 /** The system prompt for a new chat; `settings` supplies the bot's team. */
-export async function systemPrompt({ bot, message }: { bot: Bot; message?: string }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
+export async function systemPrompt({ bot }: { bot: Bot }, library: Library, paseo: PaseoApi | null, settings?: BotSettingsValues | null) {
   const group = teamOf(bot.id, settings?.groups ?? []);
-  const start: ChatStart = { ...(message !== undefined ? { message } : {}), ...(group && settings ? { team: { group, bots: settings.bots } } : {}) };
+  const start: ChatStart = group && settings ? { team: { group, bots: settings.bots } } : {};
   const context = await promptContext(bot, library, await paseoToolsOn(paseo, bot.provider), start);
   return {
     systemPrompt: [composeSystemPrompt(bot, context), BOT_GENUI_INSTRUCTIONS].join("\n\n"),

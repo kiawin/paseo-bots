@@ -14,7 +14,7 @@ import { addImportedBots } from "../shared/library";
 import { displayTitle, startBotChat } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
-import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
+import { ensureBotHomeRpc, exportBotRpc, importBotRpc, importTeamRpc } from "../shared/rpc";
 import { botFromPreset, newBot } from "../shared/templates";
 import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
@@ -38,7 +38,6 @@ import { newMessageId } from "./sent-attachments";
 import { BotPanel, type SectionId } from "./panel/BotPanel";
 import { useBotSettings } from "./useBotSettings";
 import { fullTimeline, useChat } from "./useChat";
-import { newUuid } from "../shared/uuid";
 import { ui, useTypeScale } from "./typography";
 
 type Colors = PluginTheme["colors"];
@@ -600,7 +599,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: Plug
           setPanelVersion((version) => version + 1);
           toast.show("Restored. Undo it from History if needed.", { variant: "success" });
         }}
-        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT, title: "Setup" })}
+        onSetup={() => select({ botId: selectedBot.id, chatId: null, prompt: SETUP_PROMPT })}
         onOpenChat={(chatId) => {
           select({ botId: selectedBot.id, chatId });
           // On phones the panel covers the chat.
@@ -751,26 +750,16 @@ function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, sele
   const host = useBotHost(localHost);
   const chat = useChat(host.api, selection.chatId);
   const ensureHome = useRpc(ensureBotHomeRpc);
-  const compose = useRpc(systemPromptRpc);
-  const mountServers = useRpc(mountRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  const start = async (message: OutgoingMessage, title?: string) => {
+  const start = async (message: OutgoingMessage) => {
     if (!host.api) throw new Error(`${host.label} is offline.`);
     const home = await ensureHome({ botId: bot.id });
-    const { systemPrompt } = await compose({ bot, message: message.text });
-    const agentId = newUuid();
-    const plugin = await mountServers({ botId: bot.id, agentId });
     const id = await startBotChat(host.api, {
       bot,
-      library,
-      agentId,
-      plugin,
       home: home.path,
       prompt: message.text,
-      title,
-      systemPrompt,
       images: message.images,
       attachments: message.attachments,
       clientMessageId: message.messageId,
@@ -780,12 +769,13 @@ function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, sele
   };
 
   // "Set up with the bot" opens a new chat that sends its first message straight away.
-  const autoStartedSelection = useRef<Selection | null>(null);
+  const autoStarted = useRef(false);
   useEffect(() => {
-    if (selection.chatId !== null || !selection.prompt || autoStartedSelection.current === selection || !host.api) return;
-    autoStartedSelection.current = selection;
-    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }, selection.title).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
-  }, [host.api, selection]);
+    if (selection.chatId !== null || !selection.prompt || autoStarted.current || !host.api) return;
+    autoStarted.current = true;
+    start({ text: selection.prompt, messageId: newMessageId(), images: [], attachments: [] }).catch((error: unknown) => toast.error(`Couldn't start: ${errorText(error)}`));
+    // Runs once for the selection that carries the prompt.
+  }, [host.api]);
 
   return (
     <ChatPane

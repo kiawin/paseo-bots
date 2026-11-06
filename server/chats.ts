@@ -1,31 +1,15 @@
 import type { Bot } from "../shared/bot";
 import { startBotChat } from "../shared/chat";
-import { newUuid } from "../shared/uuid";
 import { ensureBotHome } from "./bot-home";
 import type { BotsHost } from "./host";
-import { systemPrompt } from "./prompt";
-import type { Relay } from "./relay";
 
 /**
- * Starts a chat for a bot on this host, the way the app does: its system
- * prompt, its folder, and the plugin's tools and connected apps. Routines and
- * requests from other bots start chats with it.
+ * Starts a chat for a bot on this host, in its folder; the agent.create hook
+ * gives it the bot's configuration. Routines and requests from other bots
+ * start chats with it.
  */
-export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: { prompt: string; title: string; labels: Record<string, string> }): Promise<string> {
+export async function startChat(host: BotsHost, bot: Bot, input: { prompt: string; title: string; labels: Record<string, string> }): Promise<string> {
   const paseo = host.requirePaseo();
-  const library = await host.library();
   const home = await ensureBotHome(bot);
-  const { systemPrompt: system } = await systemPrompt({ bot, message: input.prompt }, library, paseo, await host.values());
-  const agentId = newUuid();
-  return startBotChat(paseo, {
-    bot,
-    library,
-    agentId,
-    plugin: { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null },
-    home: home.path,
-    prompt: input.prompt,
-    systemPrompt: system,
-    title: input.title,
-    labels: input.labels,
-  });
+  return startBotChat(paseo, { bot, home: home.path, prompt: input.prompt, title: input.title, labels: input.labels });
 }

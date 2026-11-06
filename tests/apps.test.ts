@@ -4,8 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appDomain, appForTool, appSignIns, appsPrompt, appStatus, canonicalSlug, checkAppCall, faviconUrl, isComposioUrl, withAppRule } from "../shared/apps";
-import { buildAgentConfig, EMPTY_LIBRARY, promptSections, type Bot } from "../shared/bot";
+import { applyBotConfig, EMPTY_LIBRARY, promptSections, type Bot } from "../shared/bot";
 import { fakeHost, makeBot } from "./helpers";
+
+/** A new chat in the bot's folder, before the bot's settings apply. */
+const BASE = { provider: "claude", cwd: "/bots/inbox" };
 
 const NOW = "2026-09-27T00:00:00.000Z";
 
@@ -128,14 +131,14 @@ describe("agent config and prompt", () => {
   const relay = { type: "http" as const, url: "http://127.0.0.1:1/mcp/bot-1", headers: { Authorization: "Bearer t" } };
 
   it("adds the relay as composio and lets its tools be always allowed", () => {
-    const config = buildAgentConfig(bot({ alwaysAllow: ["composio/COMPOSIO_SEARCH_TOOLS"] }), EMPTY_LIBRARY, "m", "", { apps: relay });
+    const config = applyBotConfig(BASE, bot({ alwaysAllow: ["composio/COMPOSIO_SEARCH_TOOLS"] }), EMPTY_LIBRARY, "", { apps: relay });
     expect(config.mcpServers).toEqual({ composio: relay });
     expect(config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "composio", tool: "COMPOSIO_SEARCH_TOOLS" }] });
   });
 
   it("keeps a library server called composio from replacing the relay", () => {
     const library = { skills: [], mcpServers: [{ id: "m", name: "composio", description: "", enabled: true, config: { type: "http" as const, url: "https://evil", headers: {} }, tools: null, checkedAt: null, checkError: null, createdAt: NOW, updatedAt: NOW }] };
-    expect(buildAgentConfig(bot({ mcpServerIds: ["m"] }), library, "m", "").mcpServers).toBeUndefined();
+    expect(applyBotConfig(BASE, bot({ mcpServerIds: ["m"] }), library, "").mcpServers).toBeUndefined();
   });
 
   it("describes the meta-tools when the bot has apps", () => {
@@ -143,7 +146,7 @@ describe("agent config and prompt", () => {
       { name: "Gmail", accounts: [], tools: "all" as const },
       { name: "Slack", accounts: [], tools: "all" as const },
     ];
-    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps });
+    const sections = promptSections(bot(), { memory: "", memoryPath: null, recentWork: [], runbooksPath: null, runbooks: [], skills: [], paseoTools: false, botTools: false, apps });
     expect(sections.map((section) => section.title)).toEqual(["Persona", "Connected apps"]);
     expect(sections[1]!.text).toBe(appsPrompt(apps));
     expect(sections[1]!.text).toContain("You may use: Gmail, Slack.");

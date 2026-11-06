@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pixelAvatar, SPRITE_NAMES, SPRITE_SIZE } from "../shared/avatar";
-import { botProblems, botSettings, buildAgentConfig, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
+import { applyBotConfig, botProblems, botSettings, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
 import { BOT_TEMPLATES } from "../shared/templates";
 import { relativeTime } from "../shared/time";
 
@@ -63,31 +63,39 @@ function server(id: string, name: string, patch: Partial<LibraryMcpServer> = {})
   return { id, name, description: "", enabled: true, config: { type: "stdio", command: "uvx", args: [name], env: {} }, tools: null, checkedAt: null, checkError: null, createdAt: NOW, updatedAt: NOW, ...patch };
 }
 
-describe("buildAgentConfig", () => {
-  it("passes provider/model and the mode, and leaves out empty extras", () => {
-    const config = buildAgentConfig(bot({ modeId: "default" }), EMPTY_LIBRARY, "claude-opus-5-5", "PROMPT");
-    expect(config.provider).toBe("claude/claude-opus-5-5");
-    expect(config.modeId).toBe("default");
-    expect(config.systemPrompt).toBe("PROMPT");
-    expect(config).not.toHaveProperty("mcpServers");
-    expect(config).not.toHaveProperty("toolPolicy");
+describe("applyBotConfig", () => {
+  const base = { provider: "claude", cwd: "/bots/b" };
 
+  it("applies the bot's model, mode and prompt, and leaves out empty extras", () => {
+    const config = applyBotConfig({ ...base, model: "picked" }, bot({ model: "claude-opus-5-5", modeId: "default" }), EMPTY_LIBRARY, "PROMPT");
+    expect(config).toEqual({ ...base, model: "claude-opus-5-5", modeId: "default", systemPrompt: "PROMPT" });
   });
 
-  it("keeps slashes in model ids and passes the bot's library servers that are switched on", () => {
+  it("keeps the chat's own choices the bot leaves open, unless the provider changes", () => {
+    const chat = { ...base, model: "picked", modeId: "plan", thinkingOptionId: "high" };
+    expect(applyBotConfig(chat, bot(), EMPTY_LIBRARY, "")).toMatchObject({ provider: "claude", model: "picked", modeId: "plan", thinkingOptionId: "high" });
+    const codex = applyBotConfig(chat, bot({ provider: "codex" }), EMPTY_LIBRARY, "");
+    expect(codex.provider).toBe("codex");
+    expect(codex).not.toHaveProperty("model");
+    expect(codex).not.toHaveProperty("modeId");
+    expect(codex).not.toHaveProperty("thinkingOptionId");
+    expect(codex.cwd).toBe("/bots/b");
+  });
+
+  it("adds the bot's library servers that are switched on to the chat's own", () => {
     const library: Library = { skills: [], mcpServers: [server("a", "fetch"), server("b", "off", { enabled: false }), server("c", "unused")] };
-    const config = buildAgentConfig(bot({ provider: "opencode", mcpServerIds: ["a", "b", "missing"] }), library, "opencode-go/glm-5.1", "");
-    expect(config.provider).toBe("opencode/opencode-go/glm-5.1");
-    expect(Object.keys(config.mcpServers ?? {})).toEqual(["fetch"]);
+    const own = { type: "http" as const, url: "https://own", headers: {} };
+    const config = applyBotConfig({ ...base, mcpServers: { own } }, bot({ mcpServerIds: ["a", "b", "missing"] }), library, "");
+    expect(Object.keys(config.mcpServers ?? {})).toEqual(["own", "fetch"]);
     expect(config.mcpServers?.fetch).toEqual({ type: "stdio", command: "uvx", args: ["fetch"], env: {} });
   });
 
   it("never shadows Paseo's own server and only grants tools of servers the bot carries", () => {
     const library: Library = { skills: [], mcpServers: [server("a", "fetch"), server("p", "paseo"), server("o", "off", { enabled: false })] };
-    const config = buildAgentConfig(bot({ mcpServerIds: ["a", "p", "o"], alwaysAllow: ["fetch/get", "paseo/create_agent", "off/x", "gone/y"] }), library, "m", "");
+    const config = applyBotConfig(base, bot({ mcpServerIds: ["a", "p", "o"], alwaysAllow: ["fetch/get", "paseo/create_agent", "off/x", "gone/y"] }), library, "");
     expect(Object.keys(config.mcpServers ?? {})).toEqual(["fetch"]);
     expect(config.toolPolicy).toEqual({ preapproved: [{ kind: "mcp", server: "fetch", tool: "get" }] });
-    expect(buildAgentConfig(bot({ alwaysAllow: ["paseo/create_agent"] }), library, "m", "")).not.toHaveProperty("toolPolicy");
+    expect(applyBotConfig(base, bot({ alwaysAllow: ["paseo/create_agent"] }), library, "")).not.toHaveProperty("toolPolicy");
   });
 });
 
@@ -97,7 +105,8 @@ describe("promptSections", () => {
       memory: "likes tea",
       memoryPath: "/m/MEMORY.md",
       recentWork: ['- today 09:05 · "Inbox" · you said: "Done."'],
-      playbooks: [],
+      runbooksPath: null,
+      runbooks: [],
       skills: [{ name: "pdf", description: "PDFs.", path: "/m/skills/pdf/SKILL.md" }],
       paseoTools: true,
       botTools: true,
@@ -114,7 +123,7 @@ describe("promptSections", () => {
   });
 
   it("leaves out memory and skills when the bot has no local folder", () => {
-    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
+    expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], runbooksPath: null, runbooks: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
   });
 });
 
