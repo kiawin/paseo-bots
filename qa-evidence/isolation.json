@@ -1,0 +1,14 @@
+{
+  "plain": {
+    "status": "idle",
+    "reply": "## Code search — `ccc` first, `ctx_*` fallback\ncaveman, plugin:context-mode:context-mode"
+  },
+  "bot": {
+    "status": "idle",
+    "reply": "NONE\nbots"
+  },
+  "botAfterRefresh": {
+    "status": "idle",
+    "reply": "PELICAN"
+  }
+}
