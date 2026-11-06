@@ -50,7 +50,7 @@ export function BotsSettings({ theme, host }: PluginSurfaceProps) {
 }
 
 function DefaultsSection({ localHost, defaults, onChange }: { localHost: { id: string; label: string }; defaults: BotDefaults; onChange(patch: Partial<BotDefaults>): void }) {
-  const providers = useProviders(useBotHost(null, localHost));
+  const providers = useProviders(useBotHost(localHost));
   const provider = providers.data?.find((entry) => entry.provider === defaults.provider);
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
   return (

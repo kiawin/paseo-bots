@@ -2,11 +2,10 @@ import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { randomSeed } from "../../shared/avatar";
-import type { Bot, BotAvatar, BotVoice } from "../../shared/bot";
+import type { Bot, BotAvatar } from "../../shared/bot";
 import { Avatar } from "../Avatar";
 import type { PanelProps } from "./BotPanel";
 import { errorText } from "../native";
-import { canSpeak, speak, useVoices } from "../speech";
 import { canPickFiles } from "../web";
 import { AvatarSheet } from "./AvatarSheet";
 import { Button, DrillRow, InputField, SheetActions, TextAreaField } from "./controls";
@@ -70,7 +69,6 @@ export function IdentitySection({ colors, bot, onPatch }: PanelProps) {
           />
         </SettingsCard>
       </SettingsSection>
-      {canSpeak ? <VoiceSection bot={bot} onPatch={onPatch} /> : null}
     </>
   );
 }
@@ -119,27 +117,5 @@ function AvatarEditor({ colors, bot, setAvatar, onGenerate, onClose }: { colors:
         </SheetActions>
       </Modal.Content>
     </Modal>
-  );
-}
-
-/** The device voice a bot's replies are read in, and whether finished replies are read out. */
-function VoiceSection({ bot, onPatch }: Pick<PanelProps, "bot" | "onPatch">) {
-  const voices = useVoices();
-  const setVoice = (patch: Partial<BotVoice>) => onPatch({ voice: { ...bot.voice, ...patch } });
-  const missing = bot.voice.name !== null && voices.length > 0 && !voices.some((voice) => voice.name === bot.voice.name);
-  return (
-    <SettingsSection title="Voice" info="Replies are read with this computer's voices. Voices differ between devices; a missing one reads with the default.">
-      <SettingsCard>
-        <SettingsSelect
-          label="Voice"
-          hint={missing ? `${bot.voice.name} isn't on this device` : undefined}
-          value={bot.voice.name ?? ""}
-          options={[{ label: "Default", value: "" }, ...voices.map((voice) => ({ label: voice.name.includes("(") ? voice.name : `${voice.name} (${voice.lang})`, value: voice.name }))]}
-          onValueChange={(name) => setVoice({ name: name || null })}
-        />
-        <SettingsAction label="Hear it" hint="Reads a sentence in this voice" actionLabel="Play" onPress={() => speak(`voice-test:${bot.id}`, `Hi, I'm ${bot.name || "your bot"}.`, bot.voice.name)} />
-        <SettingsSwitch label="Read replies aloud" hint="Reads each reply as it finishes, while its chat is open" value={bot.voice.readReplies} onValueChange={(readReplies) => setVoice({ readReplies })} />
-      </SettingsCard>
-    </SettingsSection>
   );
 }

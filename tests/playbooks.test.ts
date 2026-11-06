@@ -1,35 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { promptSections, type Playbook } from "../shared/bot";
-import { parseTriggers, renderPlaybooks, selectPlaybooks } from "../shared/playbooks";
+import { promptSections } from "../shared/bot";
+import { parseTriggers, playbookRunbook, runbookDescription } from "../shared/playbooks";
 import { makeBot } from "./helpers";
 
-const playbook = (name: string, triggers: string[], instructions = `${name} steps`): Playbook => ({ id: name, name, triggers, instructions });
-
-describe("playbooks", () => {
-  it("picks the ones whose trigger words appear in the job", () => {
-    const close = playbook("Month-end close", ["month end", "close the books"]);
-    const invoice = playbook("Invoices", ["invoice"]);
-    const empty = playbook("Empty", ["invoice"], "  ");
-    expect(selectPlaybooks("Can you close the books for September?", [close, invoice])).toEqual([close]);
-    expect(selectPlaybooks("It's Month-End: send the invoice.", [close, invoice, empty])).toEqual([close, invoice]);
-    // Whole words only: "invoices" isn't "invoice", and "a month ending" isn't "month end".
-    expect(selectPlaybooks("Check invoices from a month ending badly", [close, invoice])).toEqual([]);
-    expect(selectPlaybooks("invoice", [1, 2, 3, 4].map((n) => playbook(`P${n}`, ["invoice"])))).toHaveLength(3);
+describe("runbooks", () => {
+  it("turns a playbook into a runbook file that says when to use it", () => {
+    const text = playbookRunbook({ name: "Month-end  close", triggers: ["month end", "close the books"], instructions: "1. Reconcile.\n" });
+    expect(text).toBe("---\nname: Month-end close\ndescription: Use when the job mentions month end, close the books.\n---\n\n1. Reconcile.\n");
+    expect(runbookDescription(text)).toBe("Use when the job mentions month end, close the books.");
+    expect(runbookDescription("# Weekly report\n\nSteps")).toBe("Weekly report");
   });
 
-  it("marks them as guidance and keeps them within 24,000 characters", () => {
-    const text = renderPlaybooks([playbook("Big", ["x"], "a".repeat(30_000)), playbook("Next", ["x"])]);
-    expect(text).toMatch(/^Playbooks that match this job\. Follow them as process guidance; they don't grant tools or permissions/);
-    expect(text).toContain('<playbook name="Big">');
-    expect(text).not.toContain('"Next"');
-    expect(text.length).toBeLessThan(24_300);
-  });
-
-  it("reads trigger lists and adds the section to the prompt", () => {
+  it("reads trigger lists", () => {
     expect(parseTriggers("invoice, receipt\nexpense report, invoice,")).toEqual(["invoice", "receipt", "expense report"]);
+  });
+
+  it("lists the runbooks folder in the prompt", () => {
     const context = { memory: "", memoryPath: null, recentWork: [], skills: [], paseoTools: false, botTools: false, apps: [] };
-    const bot = makeBot({ playbooks: [playbook("Invoices", ["invoice"])] });
-    expect(promptSections(bot, { ...context, playbooks: selectPlaybooks("pay this invoice", bot.playbooks) }).map((section) => section.title)).toEqual(["Persona", "Playbooks"]);
-    expect(promptSections(bot, { ...context, playbooks: [] }).map((section) => section.title)).toEqual(["Persona"]);
+    const runbooks = [{ file: "invoices.md", description: "Use when paying invoices.", path: "/b/runbooks/invoices.md" }];
+    const section = promptSections(makeBot(), { ...context, runbooksPath: "/b/runbooks", runbooks }).find((entry) => entry.title === "Runbooks");
+    expect(section?.text).toContain('- invoices: Use when paying invoices. Read "/b/runbooks/invoices.md" before using it.');
+    expect(promptSections(makeBot(), { ...context, runbooksPath: "/b/runbooks", runbooks: [] }).find((entry) => entry.title === "Runbooks")?.text).toContain("no runbooks yet");
+    expect(promptSections(makeBot(), { ...context, runbooksPath: null, runbooks: [] }).map((entry) => entry.title)).toEqual(["Persona"]);
   });
 });

@@ -1,11 +1,13 @@
-import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
+import type { PluginHandlerContext, PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
+import { botHomeOf, botIdAt, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
+import { botAgentConfig, nameBotChat } from "./server/agent-config";
+import { botTerminal, type TerminalRequest } from "./server/terminal";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { systemPrompt } from "./server/prompt";
-import { registerGenUiHandlers } from "./server/genui";
+import { botRunbooks, deleteRunbook, readRunbook, writeRunbook } from "./server/runbooks";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
 import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
@@ -17,8 +19,8 @@ import { BotsHost } from "./server/host";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal } from "./server/proposals";
 import { BOT_TOOLS } from "./server/tools";
-import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
+import { ensureBotWorkspace, syncBotWorkspaceTitle, workspaceFolder } from "./shared/chat";
 import { shellCommand } from "./shared/commands";
 import {
   commandAllowRpc,
@@ -38,7 +40,6 @@ import {
   memoryReadRpc,
   memoryUndoRpc,
   memoryWriteRpc,
-  mountRpc,
   mcpProbeRpc,
   mcpSourcesRpc,
   proposalAcceptRpc,
@@ -49,6 +50,11 @@ import {
   avatarKeyStatusRpc,
   avatarRemoveKeyRpc,
   avatarSetKeyRpc,
+  botHomeRpc,
+  botWorkspaceRpc,
+  botWorkspacesRpc,
+  chatBotRpc,
+  workspaceBotRpc,
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
@@ -58,6 +64,10 @@ import {
   appsSetKeyRpc,
   appsStatusRpc,
   routineRunNowRpc,
+  runbookDeleteRpc,
+  runbookListRpc,
+  runbookReadRpc,
+  runbookWriteRpc,
   routineStatusRpc,
   routineWebhookRpc,
   skillDeleteRpc,
@@ -65,26 +75,41 @@ import {
   skillReadRpc,
   skillWriteRpc,
   systemPromptRpc,
-  uploadRpc,
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
-  const stopGenUi = registerGenUiHandlers(server);
   try {
     migrateRenamedPluginData();
   } catch (error) {
     console.error("paseo-bots: couldn't move the data of the old paseo-bot plugin", error);
   }
-  // Moves the old folder if needed and writes the Bots project icon.
-  void ensureBotsHome()
-    .then(migrateBotSkills)
-    .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
   const host = new BotsHost(settings);
+  // Older folders move first: "home" to "Bots", skills into the library, then each bot to its own folder.
+  void migrateLegacyHome()
+    .then(migrateBotSkills)
+    .then(async () => migrateBotHomes(await host.bots()))
+    .catch((error: unknown) => console.error("paseo-bots: couldn't move the bots' folders", error));
+  // A bot's project follows its name and avatar.
+  const stopSync = settings.subscribe(async (state) => {
+    if (state.status !== "ready") return;
+    for (const bot of state.values.bots) {
+      const home = botHomeOf(bot.id);
+      if (!home) continue;
+      await writeBotIcon(home, bot.avatar).catch((error: unknown) => console.error(`paseo-bots: couldn't update ${bot.name}'s icon`, error));
+      if (host.paseo && bot.name.trim()) await syncBotWorkspaceTitle(host.paseo, bot, home).catch(() => undefined);
+    }
+  });
+  /** The bot's folder, created on first use. */
+  const homeOf = async (botId: string) => {
+    const bot = await host.bot(botId);
+    if (!bot) throw new Error("This bot no longer exists.");
+    return (await ensureBotHome(bot)).path;
+  };
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
@@ -98,14 +123,44 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return { scheduler: scheduler.running };
   });
-  server.handle(ensureBotHomeRpc, (input, context) => {
+  server.handle(ensureBotHomeRpc, async ({ botId }, context) => {
     attach(context);
-    return ensureBotHome(input);
+    return { path: await homeOf(botId) };
+  });
+  server.handle(botHomeRpc, ({ botId }) => ({ path: botHomeOf(botId) }));
+  server.handle(botWorkspaceRpc, async ({ botId }, context) => {
+    attach(context);
+    const bot = await host.bot(botId);
+    if (!bot) throw new Error("This bot no longer exists.");
+    const home = await ensureBotHome(bot);
+    return { workspaceId: (await ensureBotWorkspace(context.paseo, bot, home.path)).id };
+  });
+  server.handle(botWorkspacesRpc, async (_input, context) => {
+    attach(context);
+    const { entries } = await context.paseo.workspaces.list();
+    const workspaces: { botId: string; name: string; avatar: (typeof bots)[number]["avatar"]; workspaceId: string }[] = [];
+    const bots = await host.bots();
+    for (const bot of bots) {
+      const home = botHomeOf(bot.id);
+      const workspace = home && !bot.archived ? entries.find((entry) => workspaceFolder(entry) === home) : undefined;
+      if (workspace) workspaces.push({ botId: bot.id, name: bot.name, avatar: bot.avatar, workspaceId: workspace.id });
+    }
+    return { workspaces };
+  });
+  server.handle(workspaceBotRpc, async ({ workspaceId }, context) => {
+    attach(context);
+    const workspace = (await context.paseo.workspaces.list()).entries.find((entry) => entry.id === workspaceId);
+    return { botId: workspace ? await botIdAt(workspaceFolder(workspace)) : null };
+  });
+  server.handle(chatBotRpc, async ({ agentId }, context) => {
+    attach(context);
+    return { botId: (await host.chatOf(agentId))?.botId ?? null };
   });
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
   server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
+    await homeOf(botId);
     await journal.write(botId, name, text);
     return { ok: true };
   });
@@ -121,6 +176,27 @@ export default function contribute(server: PluginServerContext) {
     return { ok: true };
   });
   server.handle(memoryLogRpc, async ({ botId, day }) => ({ ...(await listLogDays(botId)), text: day ? (await readLogDay(botId, day)).text : null }));
+  server.handle(runbookListRpc, async ({ botId }) => {
+    const bot = await host.bot(botId);
+    if (!bot) return { folder: null, runbooks: [] };
+    const { folder, runbooks } = await botRunbooks(bot);
+    return { folder, runbooks: runbooks.map(({ file, description }) => ({ file, description })) };
+  });
+  server.handle(runbookReadRpc, async ({ botId, file }) => {
+    const bot = await host.bot(botId);
+    const seed = bot && !botHomeOf(botId) ? (await botRunbooks(bot)).runbooks.find((entry) => entry.file === file) : undefined;
+    return seed ? { text: seed.text ?? "" } : readRunbook(botId, file);
+  });
+  server.handle(runbookWriteRpc, async ({ botId, file, text }) => {
+    await homeOf(botId);
+    await writeRunbook(botId, file, text);
+    return { ok: true };
+  });
+  server.handle(runbookDeleteRpc, async ({ botId, file }) => {
+    await homeOf(botId);
+    await deleteRunbook(botId, file);
+    return { ok: true };
+  });
   server.handle(memoryLogDeleteRpc, ({ botId, day }) => deleteLogDay(botId, day));
   server.handle(skillImportRpc, importSkills);
   server.handle(skillReadRpc, readSkill);
@@ -141,10 +217,6 @@ export default function contribute(server: PluginServerContext) {
   server.handle(appsDisconnectRpc, disconnect);
   server.handle(appsRenameRpc, renameAccount);
   server.handle(appsToolsRpc, appTools);
-  server.handle(mountRpc, async ({ botId, agentId }) => {
-    const bot = await host.bot(botId);
-    return { tools: await relay.mountTools(botId, agentId), apps: bot?.apps.length ? await relay.mountApps(botId) : null };
-  });
   server.handle(proposalGetRpc, async ({ id }) => ({ proposal: await getProposal(id) }));
   server.handle(proposalAcceptRpc, ({ id }) => acceptProposal(id));
   server.handle(proposalDismissRpc, async ({ id }) => ({ proposal: await dismissProposal(id) }));
@@ -164,7 +236,28 @@ export default function contribute(server: PluginServerContext) {
   server.handle(importBotRpc, importBot);
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
-  server.handle(uploadRpc, saveUpload);
+  // Paseo versions with terminal.create.before also take any Codex feature flag in
+  // providerOptions (one change added both); older ones reject unknown flags, which
+  // would fail the chat, so Codex chats only switch features off where the hook exists.
+  type TerminalHook = (name: string, handler: (input: { request: TerminalRequest }, context: PluginHookContext) => Promise<TerminalRequest | undefined>) => () => void;
+  const addHook = (server as unknown as { addHook?: TerminalHook }).addHook?.bind(server);
+  let codexFeatures = false;
+  try {
+    addHook?.("terminal.create.before", async ({ request }, context) => {
+      host.attach(context.paseo);
+      return botTerminal(host, relay, request);
+    });
+    codexFeatures = Boolean(addHook);
+  } catch {
+    // This Paseo has no terminal hook: the bot's terminals run the CLI as it is.
+  }
+  server.before("agent.create", async ({ request }, context) => {
+    host.attach(context.paseo);
+    return botAgentConfig(host, relay, request, { codexFeatures });
+  });
+  server.before("agent.session_open", async ({ request }) => {
+    await nameBotChat(relay, request).catch((error: unknown) => console.error("paseo-bots: couldn't name a chat's tools", error));
+  });
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
@@ -187,7 +280,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return () => {
-    stopGenUi();
+    stopSync();
     scheduler.stop();
     relay.stop();
   };

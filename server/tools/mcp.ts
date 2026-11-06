@@ -3,7 +3,6 @@ import type { Bot } from "../../shared/bot";
 import type { BotToolName } from "../../shared/bot-tools";
 import { PLUGIN_VERSION } from "../../shared/version";
 import type { BotsHost } from "../host";
-import type { Relay } from "../relay";
 
 // A minimal MCP server over streamable HTTP: stateless JSON-RPC with JSON
 // answers, enough for initialize, tools/list and tools/call. Each request
@@ -16,8 +15,6 @@ export interface ToolCaller {
   /** The chat (agent) the call came from. */
   agentId: string;
   host: BotsHost;
-  /** Starts other bots' chats with their tools. */
-  relay: Relay;
 }
 
 export interface BotTool<Schema extends ZodType = ZodType> {

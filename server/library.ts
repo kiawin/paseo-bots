@@ -3,7 +3,7 @@ import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, unlink,
 import { dirname, join, posix, relative, sep } from "node:path";
 import type { LibrarySkill } from "../shared/bot";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
-import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
+import { botHomeOf, legacyBotsPath, pluginDataPath } from "./bot-home";
 
 // The shared skill library: one folder per skill under plugin-data/library/skills.
 // Bots that use the managed folder get a link to each of their skills in
@@ -141,10 +141,10 @@ export async function deleteSkill({ id }: { id: string }) {
  * the library (the first copy of a name wins; later ones stay where they are).
  */
 export async function migrateBotSkills(): Promise<void> {
-  const bots = await readdir(botsHomePath(), { withFileTypes: true }).catch(() => []);
+  const bots = await readdir(legacyBotsPath(), { withFileTypes: true }).catch(() => []);
   for (const bot of bots) {
     if (!bot.isDirectory()) continue;
-    const skillsDir = join(botsHomePath(), bot.name, "skills");
+    const skillsDir = join(legacyBotsPath(), bot.name, "skills");
     const skills = await readdir(skillsDir, { withFileTypes: true }).catch(() => []);
     for (const skill of skills) {
       if (!skill.isDirectory()) continue;
@@ -159,11 +159,17 @@ export async function migrateBotSkills(): Promise<void> {
 /**
  * Points <bot>/skills/<id> at each library skill the bot uses and removes links
  * to skills it no longer uses. Returns the SKILL.md path to give the agent for
- * each skill: the link, or the library copy when a link can't be made.
+ * each skill: the link, or the library copy when a link can't be made or the
+ * bot has no folder yet.
  */
 export async function linkBotSkills(botId: string, ids: readonly string[]): Promise<Map<string, string>> {
-  const dir = join(botDataPath(botId), "skills");
+  const home = botHomeOf(botId);
   const paths = new Map<string, string>();
+  if (!home) {
+    for (const id of ids) paths.set(id, join(librarySkillPath(id), "SKILL.md"));
+    return paths;
+  }
+  const dir = join(home, "skills");
   await mkdir(dir, { recursive: true }).catch(() => {});
   const existing = await readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of existing) {

@@ -132,7 +132,7 @@ const STATUS: Partial<Record<ReturnType<typeof chatBucket>, { label: string; col
 };
 
 function BotCard({ colors, bot, lead, localHost, onPress }: { colors: Colors; bot: Bot; lead: boolean; localHost: LocalHost; onPress(): void }) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const status = STATUS[aggregateBuckets((chats.data ?? []).map(chatBucket))];
   const { hovered, hoverProps } = useHover();

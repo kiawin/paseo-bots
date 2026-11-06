@@ -203,7 +203,7 @@ export class RoutineScheduler {
   }
 
   private newChat(bot: Bot, routine: Routine, prompt: string): Promise<string> {
-    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
+    return startChat(this.host, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
   }
 
   /** Starts a run in a new chat, or records why it didn't; the results chat gets a card either way. */
@@ -215,7 +215,6 @@ export class RoutineScheduler {
       const run: RoutineRun = { id: `run-${randomBytes(4).toString("hex")}`, trigger, scheduledFor: due.toISOString(), startedAt: now, endedAt: null, status: "running", agentId: null, output: null, error: null };
       if (trigger === "schedule") record.lastRunAt = now;
       try {
-        if (bot.hostId) throw new Error("Routines run on the host that stores the bot; this bot runs on another host.");
         // OpenMausBot's overlap rule: skip while the previous run is still working (webhooks allow a few at once).
         const limit = trigger === "webhook" ? WEBHOOK_UNFINISHED : 1;
         const recent = record.runs.filter((entry) => entry.agentId && entry.status === "running").slice(-limit);
@@ -252,7 +251,7 @@ export class RoutineScheduler {
       const { routines } = await this.status();
       const now = new Date();
       for (const bot of values.bots) {
-        if (bot.archived || bot.hostId) continue;
+        if (bot.archived) continue;
         for (const routine of bot.routines) {
           const decision = decide(routine, routines[routine.id]?.lastRunAt ?? null, now);
           if (decision.action === "run") await this.run(bot, routine, "schedule", decision.due);
