@@ -1,0 +1,11 @@
+{
+  "plainCodex": {
+    "status": "idle",
+    "reply": "Codex\nFOUND context_mode"
+  },
+  "coderBot": {
+    "status": "idle",
+    "reply": "Coder\nNOTFOUND"
+  },
+  "scoutTerminal": "NONE\nScout\nNONE\nDONE\n[exit 0]\n"
+}
