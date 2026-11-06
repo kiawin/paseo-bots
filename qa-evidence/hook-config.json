@@ -1,0 +1,21 @@
+{
+  "agentId": "ef0bc11e-c3d6-4bfe-8532-cb39273352da",
+  "startedWith": "provider claude, the workspace folder, a prompt; no bot settings, no labels",
+  "status": "idle",
+  "lastMessage": "I'm Scout, your research assistant bot in Paseo, and my Soul says to answer in three bullet points or fewer.",
+  "labels": {},
+  "systemPromptStartsWith": "You are Scout, a personal bot running inside Paseo.\nRole: Research assistant\n\nBEGIN STANDING INSTRUCTIONS\nAnswer in three bullet points or fewer.\nEND STANDING INSTRUCTIONS\nFollow these unless the user asks otherwise in this chat.\n\nYour long-term memory lives in ~/.config/paseo/bots/scout/\u2026",
+  "mcpServers": [
+    "bots"
+  ],
+  "preapproved": [
+    "bots/list_bots",
+    "bots/check_chat",
+    "bots/search_chats",
+    "bots/get_setup",
+    "bots/propose_skill",
+    "bots/propose_routine",
+    "bots/propose_changes",
+    "bots/connect_app"
+  ]
+}

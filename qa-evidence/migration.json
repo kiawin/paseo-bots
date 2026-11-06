@@ -1,0 +1,14 @@
+{
+  "linkAtOldPath": "~/.config/paseo/bots/scout",
+  "memory": "- Prefers short answers\n- Weekly report goes out on Fridays\n",
+  "runbooks": [
+    "weekly-report.md"
+  ],
+  "files": [
+    ".bot-id",
+    "MEMORY.md",
+    "icon.svg",
+    "memory",
+    "runbooks"
+  ]
+}
