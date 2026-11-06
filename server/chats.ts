@@ -13,17 +13,16 @@ import type { Relay } from "./relay";
  */
 export async function startChat(host: BotsHost, relay: Relay, bot: Bot, input: { prompt: string; title: string; labels: Record<string, string> }): Promise<string> {
   const paseo = host.requirePaseo();
-  if (bot.hostId) throw new Error(`${bot.name} runs on another host, so its chats can't be started from here.`);
   const library = await host.library();
-  const home = await ensureBotHome({ botId: bot.id });
-  const { systemPrompt: system } = await systemPrompt({ bot, local: true, message: input.prompt }, library, paseo, await host.values());
+  const home = await ensureBotHome(bot);
+  const { systemPrompt: system } = await systemPrompt({ bot, message: input.prompt }, library, paseo, await host.values());
   const agentId = newUuid();
   return startBotChat(paseo, {
     bot,
     library,
     agentId,
     plugin: { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null },
-    placement: bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root },
+    home: home.path,
     prompt: input.prompt,
     systemPrompt: system,
     title: input.title,

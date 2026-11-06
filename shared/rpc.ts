@@ -15,7 +15,7 @@ const SkillName = z.string().regex(/^[A-Za-z0-9._-]+$/);
 export const ensureBotHomeRpc = defineRpc({
   name: "bots.ensure-home",
   input: z.object({ botId: BotId }),
-  output: z.object({ root: z.string(), path: z.string() }),
+  output: z.object({ path: z.string() }),
 });
 
 /** Sent by the app on start so the daemon side can run routines. */
@@ -30,7 +30,7 @@ const PromptSectionSchema = z.object({ title: z.string(), text: z.string() });
 /** The bot's system prompt as it would be sent now, with its memory and skills; `message` (a new chat's first) picks its playbooks. */
 export const systemPromptRpc = defineRpc({
   name: "bots.system-prompt",
-  input: z.object({ bot: BotSchema, local: z.boolean(), message: z.string().max(100_000).optional() }),
+  input: z.object({ bot: BotSchema, message: z.string().max(100_000).optional() }),
   output: z.object({ systemPrompt: z.string(), sections: z.array(PromptSectionSchema) }),
 });
 

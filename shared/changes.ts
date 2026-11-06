@@ -80,7 +80,6 @@ const BotFields = {
   thinking: z.string().max(100).nullable().optional().describe("Thinking option id from get_setup; null for the default."),
   contact_bots: z.enum(["ask", "allow", "off"]).optional().describe("Asking other bots for help: after the user approves each request (ask), freely (allow) or never (off)."),
   avatar: AvatarInput.optional(),
-  working_folder: z.string().max(1000).nullable().optional().describe("Absolute path of its working folder; null for its own folder in the Bots project."),
   pinned: z.boolean().optional(),
 };
 
@@ -347,11 +346,6 @@ function withFields(bot: Bot, fields: BotFieldValues, context: ApplyContext): Bo
   if (fields.description !== undefined) next.description = fields.description.trim();
   if (fields.instructions !== undefined) next.soul = fields.instructions.trim();
   if (fields.contact_bots !== undefined) next.contactBots = fields.contact_bots;
-  if (fields.working_folder !== undefined) {
-    const folder = fields.working_folder?.trim() || null;
-    if (folder && !folder.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(folder)) throw new Error("A working folder needs an absolute path.");
-    next.cwd = folder;
-  }
   if (fields.pinned !== undefined) next.pinned = fields.pinned;
   return next;
 }
@@ -651,7 +645,6 @@ function fieldsText(fields: BotFieldValues): string[] {
   parts.push(...agentText(fields));
   if (fields.contact_bots !== undefined) parts.push({ ask: "asks before contacting other bots", allow: "contacts other bots freely", off: "doesn't contact other bots" }[fields.contact_bots]);
   if (fields.avatar) parts.push(fields.avatar.image_url ? "a picture" : fields.avatar.image_url === null ? "the pixel face back" : "a different face");
-  if (fields.working_folder !== undefined) parts.push(fields.working_folder ? `working folder ${fields.working_folder}` : "its own working folder");
   if (fields.pinned !== undefined) parts.push(fields.pinned ? "pinned" : "unpinned");
   return parts;
 }
@@ -762,7 +755,6 @@ export function changeWarnings(changes: readonly Change[]): string[] {
     if (change.type === "update_bot" && change.allow_tools?.length) warnings.push(`${who} may use ${list(change.allow_tools)} without asking you.`);
     const apps = change.type === "create_bot" ? change.apps : change.type === "update_bot" ? change.add_apps : undefined;
     if (apps?.length) warnings.push(`${who} may use ${list(apps.map((entry) => entry.app))} with your connected accounts.`);
-    if ((change.type === "create_bot" || change.type === "update_bot") && change.working_folder) warnings.push(`${who} works in ${change.working_folder}.`);
     if (change.type === "add_mcp_server" && change.command) warnings.push(`The ${change.name} MCP server runs a program on this computer once it's on.`);
     if (change.type === "delete_bot") warnings.push(`Deletes the bot ${change.bot}.`);
     if (change.type === "delete_team") warnings.push(`Deletes the team ${change.team}.`);
@@ -841,6 +833,5 @@ export function botDetails(values: BotSettingsValues, ref: string): string {
       const rule = bot.appRules[slug];
       return `${slug}${rule ? ` (tools: ${Array.isArray(rule.tools) ? list(rule.tools) : rule.tools}${rule.account ? "; one account" : ""})` : ""}`;
     }).join(", ")),
-    block("Working folder", bot.cwd ?? "its own folder in the Bots project"),
   ].join("\n\n");
 }

@@ -27,7 +27,7 @@ function ruleHint(rule: AppRule | undefined, accounts: readonly AppAccount[], ap
  * opens the bot's limits on the app.
  */
 export function AppsPicker({ colors, bot, localHost, onPatch }: Pick<PanelProps, "colors" | "bot" | "localHost" | "onPatch">) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const status = useAppsStatus();
   const configured = status.data?.configured ?? false;
   const accounts = useAppsAccounts(configured);

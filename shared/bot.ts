@@ -153,8 +153,6 @@ export const BotSchema = z.object({
   /** Longer blurb shown in the bot list and given to the agent. */
   description: z.string().default(""),
   avatar: BotAvatarSchema,
-  /** Daemon server id the bot runs on. Null means the host that stores the bot. */
-  hostId: z.string().nullable().default(null),
   provider: z.string(),
   model: z.string().nullable().default(null),
   /** Paseo mode: the provider's approval level. */
@@ -177,8 +175,6 @@ export const BotSchema = z.object({
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),
   playbooks: z.array(PlaybookSchema).default([]),
-  /** Working folder. Null means the shared managed folder on the storing host. */
-  cwd: z.string().nullable().default(null),
   pinned: z.boolean().default(false),
   archived: z.boolean().default(false),
   createdAt: z.string(),
@@ -514,20 +510,16 @@ export function composeSystemPrompt(bot: Bot, context: PromptContext): string {
     .join("\n\n");
 }
 
-/**
- * What a bot won't do, from its settings, for the Overview (OpenMausBot's
- * wontLines). `local` is whether it runs on this host, where the plugin's tools
- * and connected apps reach it.
- */
-export function botLimits(bot: Bot, facts: { local: boolean; appsConfigured: boolean }): string[] {
+/** What a bot won't do, from its settings, for the Overview (OpenMausBot's wontLines). */
+export function botLimits(bot: Bot, facts: { appsConfigured: boolean }): string[] {
   const lines: string[] = [];
   // Modes that skip approvals: Claude's bypassPermissions, Codex's full-access and the like.
   if (!/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
-  if (!facts.local || bot.contactBots === "off") lines.push("Can't contact other bots.");
+  if (bot.contactBots === "off") lines.push("Can't contact other bots.");
   else if (bot.contactBots === "ask") lines.push("Asks before contacting other bots.");
-  if (!facts.local || !facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
+  if (!facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
   if (!bot.routines.some((routine) => routine.enabled)) lines.push("Won't act on a schedule.");
-  if (facts.local) lines.push("Keeps skills and routines only after you confirm them.");
+  lines.push("Keeps skills and routines only after you confirm them.");
   return lines;
 }
 
@@ -618,12 +610,11 @@ export function defaultModelId(models: readonly { id: string; isDefault?: boolea
   return (selectable.find((model) => model.isDefault) ?? selectable[0])?.id ?? null;
 }
 
-/** Problems that block saving. `isLocalHost` is whether the bot runs on the storing host. */
-export function botProblems(bot: Bot, isLocalHost: boolean): string[] {
+/** Problems that block saving. */
+export function botProblems(bot: Bot): string[] {
   const problems: string[] = [];
   if (!bot.name.trim()) problems.push("Give the bot a name.");
   if (!bot.provider) problems.push("Pick an agent provider.");
-  if (!isLocalHost && !bot.cwd) problems.push("Pick a working folder on the selected host.");
   if (utf8Bytes(bot.soul) > SOUL_MAX_BYTES) problems.push(`Standing instructions are over ${SOUL_MAX_BYTES / 1000} KB.`);
   return problems;
 }

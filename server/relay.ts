@@ -193,7 +193,7 @@ export class Relay {
     if (!parsed) return;
     const bot = await this.host.bot(botId);
     const id = (parsed.message.id as string | number | undefined) ?? null;
-    if (!bot || bot.archived || bot.hostId || bot.apps.length === 0) {
+    if (!bot || bot.archived || bot.apps.length === 0) {
       return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "Connected apps are off for this bot. Turn them on under its Access settings in Paseo." } });
     }
     // Limits need Composio's tool lists, so they're looked up for tool calls only.

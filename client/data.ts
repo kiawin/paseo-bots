@@ -1,4 +1,4 @@
-import { getPaseoClient, usePaseo, useHosts } from "@getpaseo/plugin/client";
+import { usePaseo } from "@getpaseo/plugin/client";
 import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
@@ -19,40 +19,10 @@ export interface BotHost {
   online: boolean;
 }
 
-type HostSummaries = ReturnType<typeof useHosts>;
-
-function resolveHost(hostId: string | null, local: LocalHost, localApi: PaseoApi, hosts: HostSummaries): BotHost {
-  if (!hostId || hostId === local.id) {
-    return { api: localApi, key: local.id, label: local.label, isLocal: true, online: true };
-  }
-  const summary = hosts.find((host) => host.serverId === hostId);
-  const label = summary?.label ?? "Unknown host";
-  if (summary?.status !== "online") return { api: null, key: hostId, label, isLocal: false, online: false };
-  try {
-    return { api: getPaseoClient(hostId), key: hostId, label, isLocal: false, online: true };
-  } catch {
-    return { api: null, key: hostId, label, isLocal: false, online: false };
-  }
-}
-
-/** Resolves the host a bot runs on. `hostId === null` is the host that stores the bots. */
-export function useBotHost(hostId: string | null, local: LocalHost): BotHost {
-  const localApi = usePaseo();
-  const hosts = useHosts();
-  const summary = hostId ? hosts.find((host) => host.serverId === hostId) : undefined;
-  const status = summary?.status;
-  return useMemo(
-    () => resolveHost(hostId, local, localApi, hosts),
-    // Only the fields that change the result.
-    [hostId, local.id, local.label, localApi, summary?.label, status],
-  );
-}
-
-/** The same resolution outside render, e.g. for menu actions. */
-export function useHostResolver(local: LocalHost): (hostId: string | null) => BotHost {
-  const localApi = usePaseo();
-  const hosts = useHosts();
-  return (hostId) => resolveHost(hostId, local, localApi, hosts);
+/** The host that stores the bots, where every bot runs. */
+export function useBotHost(local: LocalHost): BotHost {
+  const api = usePaseo();
+  return useMemo(() => ({ api, key: local.id, label: local.label, isLocal: true, online: true }), [api, local.id, local.label]);
 }
 
 export function useProviders(host: BotHost) {
@@ -73,22 +43,6 @@ export function useAgentProfiles(host: BotHost) {
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => (await host.api!.config.get()).config.agentProfiles ?? [],
-  });
-}
-
-export function useHostWorkspaces(host: BotHost) {
-  return useQuery({
-    queryKey: ["paseo-bots", "workspaces", host.key],
-    enabled: !!host.api,
-    staleTime: 30_000,
-    queryFn: async () => {
-      const result = await host.api!.workspaces.list();
-      return result.entries.map((workspace) => ({
-        id: workspace.id,
-        label: workspace.title || `${workspace.projectDisplayName} · ${workspace.name}`,
-        directory: workspace.workspaceDirectory ?? workspace.projectRootPath,
-      }));
-    },
   });
 }
 

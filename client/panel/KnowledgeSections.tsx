@@ -91,7 +91,7 @@ function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: 
 // ---------------------------------------------------------------- skills
 
 export function SkillsSection(props: PanelProps) {
-  const host = useBotHost(props.bot.hostId, props.localHost);
+  const host = useBotHost(props.localHost);
   return (
     <>
       {!host.isLocal ? <LocalOnly colors={props.colors} what="Skills" /> : null}
@@ -107,7 +107,7 @@ const MEMORY_LINES = 200;
 const MEMORY_BYTES = 24_000;
 
 export function MemorySection({ colors, bot, localHost }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const list = useRpc(memoryListRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
