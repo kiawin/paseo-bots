@@ -578,14 +578,27 @@ export interface BotSessionConfig {
   systemPrompt?: string;
   mcpServers?: Record<string, McpServerConfig>;
   toolPolicy?: { preapproved: ToolGrant[] };
+  providerOptions?: Record<string, unknown>;
 }
+
+/**
+ * Claude Code flags that keep a bot's chat to what its settings say: no user
+ * settings (~/.claude/settings.json hooks, plugins and permissions, and
+ * ~/.claude/CLAUDE.md), and only the MCP servers Paseo passes in, so no user or
+ * project .mcp.json servers. The login and session files stay where they are.
+ * The bot's own folder still counts as the project, so a CLAUDE.md or
+ * .claude/settings.json there applies. Paseo hands extraArgs to the CLI, and
+ * the last --setting-sources wins.
+ */
+export const CLAUDE_BOT_FLAGS: Record<string, string | null> = { "setting-sources": "project,local", "strict-mcp-config": null };
 
 /**
  * A new chat's config as the bot's settings say, whatever the chat asked for:
  * the bot's provider, model, mode and thinking (one the bot leaves on Default
  * is the provider's default), its system prompt, only its MCP servers and the
- * plugin's, and only the tools it may use without asking. Paseo still adds its
- * own tools, and the user can switch model or mode inside a chat once it runs.
+ * plugin's, and only the tools it may use without asking. A Claude chat also
+ * skips the user's own Claude Code settings (CLAUDE_BOT_FLAGS). Paseo still adds
+ * its own tools, and the user can switch model or mode inside a chat once it runs.
  */
 export function applyBotConfig<Config extends BotSessionConfig>(config: Config, bot: Bot, library: Library, systemPrompt: string, plugin: PluginServers = {}): Config & BotSessionConfig {
   const provider = bot.provider || config.provider;
@@ -609,6 +622,11 @@ export function applyBotConfig<Config extends BotSessionConfig>(config: Config, 
   pick("model", bot.model);
   pick("modeId", bot.modeId);
   pick("thinkingOptionId", bot.thinkingOptionId);
+  if (provider === "claude") {
+    const options = config.providerOptions ?? {};
+    const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
+    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...CLAUDE_BOT_FLAGS } };
+  }
   if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
   else delete next.mcpServers;
   if (preapproved.length > 0) next.toolPolicy = { preapproved };

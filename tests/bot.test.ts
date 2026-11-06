@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pixelAvatar, SPRITE_NAMES, SPRITE_SIZE } from "../shared/avatar";
-import { applyBotConfig, botProblems, botSettings, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
+import { applyBotConfig, botProblems, botSettings, CLAUDE_BOT_FLAGS, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
 import { BOT_TEMPLATES } from "../shared/templates";
 import { relativeTime } from "../shared/time";
 
@@ -67,7 +67,7 @@ describe("applyBotConfig", () => {
 
   it("applies the bot's model, mode and prompt, and leaves out empty extras", () => {
     const config = applyBotConfig({ ...base, model: "picked" }, bot({ model: "claude-opus-5-5", modeId: "default" }), EMPTY_LIBRARY, "PROMPT");
-    expect(config).toEqual({ ...base, model: "claude-opus-5-5", modeId: "default", systemPrompt: "PROMPT" });
+    expect(config).toEqual({ ...base, model: "claude-opus-5-5", modeId: "default", systemPrompt: "PROMPT", providerOptions: { extraArgs: CLAUDE_BOT_FLAGS } });
   });
 
   it("uses only the bot's settings, whatever the chat asked for", () => {
@@ -75,8 +75,14 @@ describe("applyBotConfig", () => {
     const chat = { ...base, provider: "codex", model: "picked", modeId: "plan", thinkingOptionId: "high", mcpServers: { own }, toolPolicy: { preapproved: [{ kind: "mcp" as const, server: "own", tool: "x" }] } };
     const config = applyBotConfig(chat, bot(), EMPTY_LIBRARY, "PROMPT");
     // The bot's provider; settings it leaves on Default are the provider's default, not the chat's pick.
-    expect(config).toEqual({ ...base, provider: "claude", systemPrompt: "PROMPT" });
+    expect(config).toEqual({ ...base, provider: "claude", systemPrompt: "PROMPT", providerOptions: { extraArgs: CLAUDE_BOT_FLAGS } });
     expect(applyBotConfig(chat, bot({ model: "opus", modeId: "default", thinkingOptionId: "low" }), EMPTY_LIBRARY, "")).toMatchObject({ model: "opus", modeId: "default", thinkingOptionId: "low" });
+  });
+
+  it("keeps a Claude chat away from the user's own Claude Code settings and MCP servers", () => {
+    const claude = applyBotConfig({ ...base, providerOptions: { extraArgs: { "add-dir": "/data", "setting-sources": "user" }, sandbox: { enabled: true } } }, bot(), EMPTY_LIBRARY, "");
+    expect(claude.providerOptions).toEqual({ extraArgs: { "add-dir": "/data", "setting-sources": "project,local", "strict-mcp-config": null }, sandbox: { enabled: true } });
+    expect(applyBotConfig({ ...base, provider: "claude" }, bot({ provider: "codex" }), EMPTY_LIBRARY, "")).not.toHaveProperty("providerOptions");
   });
 
   it("gives the chat only the bot's library servers that are switched on", () => {
