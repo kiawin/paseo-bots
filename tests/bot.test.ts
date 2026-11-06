@@ -11,7 +11,6 @@ function bot(patch: Partial<Bot> = {}): Bot {
     title: "Inbox triage",
     description: "Triages the inbox.",
     avatar: { seed: "seed", palette: null, shape: "circle", imageUrl: null },
-    hostId: null,
     provider: "claude",
     model: null,
     modeId: null,
@@ -28,7 +27,6 @@ function bot(patch: Partial<Bot> = {}): Bot {
     routines: [],
     pinned: false,
     archived: false,
-    cwd: null,
     createdAt: "2026-09-26T00:00:00.000Z",
     updatedAt: "2026-09-26T00:00:00.000Z",
     ...patch,
@@ -121,12 +119,12 @@ describe("promptSections", () => {
 });
 
 describe("botProblems", () => {
-  it("accepts a complete local bot", () => {
-    expect(botProblems(bot(), true)).toEqual([]);
+  it("accepts a complete bot", () => {
+    expect(botProblems(bot())).toEqual([]);
   });
 
-  it("requires a folder on remote hosts", () => {
-    expect(botProblems(bot({ hostId: "srv-2" }), false)).toContain("Pick a working folder on the selected host.");
+  it("needs a name", () => {
+    expect(botProblems(bot({ name: " " }))).toContain("Give the bot a name.");
   });
 });
 

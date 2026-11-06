@@ -11,7 +11,7 @@ import { randomSeed } from "../shared/avatar";
 import { applyDefaults, DEFAULT_BOT_DEFAULTS, DEFAULT_BOT_LIST_UI, EMPTY_LIBRARY, newBotId, newGroupId, presetFromBot, pushHistory, type Bot, type BotGroup, type BotListUi, type Library } from "../shared/bot";
 import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
-import { displayTitle, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
+import { displayTitle, startBotChat } from "../shared/chat";
 import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
 import { ensureBotHomeRpc, mountRpc, exportBotRpc, importBotRpc, importTeamRpc, systemPromptRpc } from "../shared/rpc";
@@ -20,7 +20,7 @@ import { AvatarTheme } from "./Avatar";
 import { botMenuEntries, chatMenuEntries, ExportDialog, NewBotDialog, RenameDialog } from "./BotDialogs";
 import { BotSidebar, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { ChatPane, type OutgoingMessage } from "./ChatPane";
-import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
+import { useBotHost, useChatInvalidation, useProviders, type LocalHost } from "./data";
 import { takeIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
 import { onLibraryTarget, type LibraryTarget } from "./navigation";
@@ -70,8 +70,8 @@ function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: Plug
   const menu = useMenu();
   const queryClient = useQueryClient();
   const localHost: LocalHost = { id: host.id, label: host.label };
-  const localProviders = useProviders(useBotHost(null, localHost));
-  const resolveHost = useHostResolver(localHost);
+  const localBotHost = useBotHost(localHost);
+  const localProviders = useProviders(localBotHost);
   const exportBot = useRpc(exportBotRpc);
   const importBot = useRpc(importBotRpc);
   const importTeam = useRpc(importTeamRpc);
@@ -302,8 +302,6 @@ function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: Plug
     await addBot({
       ...copy,
       name: `${bot.name} copy`,
-      hostId: bot.hostId,
-      cwd: bot.cwd,
       alwaysAllow: bot.alwaysAllow,
       skillIds: bot.skillIds,
       mcpServerIds: bot.mcpServerIds,
@@ -365,7 +363,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: Plug
       .catch(() => toast.error("Unable to copy"));
 
   const openBotMenu = (bot: Bot, anchor: LayoutRectangle, source: MenuSource) => {
-    const botHost = resolveHost(bot.hostId);
+    const botHost = localBotHost;
     const chats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bots", "chats", botHost.key, bot.id]) ?? [];
     const workspaceId = chats.find((chat) => chat.workspaceId)?.workspaceId;
     const openWorkspace = navigation?.openWorkspace;
@@ -426,7 +424,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation, playAudio }: Plug
     });
 
   const openChatMenu = (bot: Bot, chat: PaseoAgent, anchor: LayoutRectangle, source: MenuSource, context: ChatMenuContext) => {
-    const botHost = resolveHost(bot.hostId);
+    const botHost = localBotHost;
     const move = (delta: -1 | 1) => {
       const order = moveKey(context.siblings, chat.id, delta);
       return order ? () => updateUi((current) => ({ ...current, chatOrder: { ...current.chatOrder, [bot.id]: order } })) : undefined;
@@ -750,7 +748,7 @@ interface SelectedChatProps {
 }
 
 function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, selection, localHost, panelOpen, layout, keyboardOpen, typeVersion, onBack, onBotMenu, onTogglePanel, onStarted }: SelectedChatProps) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chat = useChat(host.api, selection.chatId);
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
@@ -760,19 +758,16 @@ function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, sele
 
   const start = async (message: OutgoingMessage) => {
     if (!host.api) throw new Error(`${host.label} is offline.`);
-    // The bot's folder holds its memory and skills even when it works elsewhere.
     const home = await ensureHome({ botId: bot.id });
-    const placement = bot.cwd ? { path: bot.cwd, projectRoot: null } : { path: home.path, projectRoot: home.root };
-    const { systemPrompt } = await compose({ bot, local: host.isLocal, message: message.text });
-    // The plugin's tools and connected apps go through this host's relay, so only bots here get them.
+    const { systemPrompt } = await compose({ bot, message: message.text });
     const agentId = newUuid();
-    const plugin = host.isLocal ? await mountServers({ botId: bot.id, agentId }) : {};
+    const plugin = await mountServers({ botId: bot.id, agentId });
     const id = await startBotChat(host.api, {
       bot,
       library,
-      ...(host.isLocal ? { agentId } : {}),
+      agentId,
       plugin,
-      placement,
+      home: home.path,
       prompt: message.text,
       systemPrompt,
       images: message.images,
@@ -782,19 +777,6 @@ function SelectedChat({ pluginHost, theme, playAudio, colors, bot, library, sele
     await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", host.key, bot.id] });
     onStarted(id);
   };
-
-  // Keep the bot's workspace named after the bot.
-  useEffect(() => {
-    if (!host.api || bot.cwd || !bot.name.trim()) return;
-    const api = host.api;
-    const timer = setTimeout(() => {
-      void ensureHome({ botId: bot.id })
-        .then((home) => syncBotWorkspaceTitle(api, bot, { path: home.path, projectRoot: home.root }))
-        .catch(() => {});
-    }, 1000);
-    return () => clearTimeout(timer);
-    // Only the name matters here.
-  }, [bot.name, host.api]);
 
   // "Set up with the bot" opens a new chat that sends its first message straight away.
   const autoStarted = useRef(false);

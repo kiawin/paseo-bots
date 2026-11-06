@@ -169,8 +169,6 @@ export async function importBot({ botId, json }: { botId: string; json: string }
   const bot: Bot = {
     ...parsed.bot,
     id: botId,
-    hostId: null,
-    cwd: null,
     alwaysAllow: [],
     skillIds: skills.map((skill) => skill.id),
     mcpServerIds: [],

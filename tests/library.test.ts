@@ -15,7 +15,6 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     title: "",
     description: "",
     avatar: { seed: id, palette: null, shape: "circle", imageUrl: null },
-    hostId: null,
     provider: "claude",
     model: null,
     modeId: null,
@@ -30,7 +29,6 @@ function bot(id: string, patch: Partial<Bot> = {}): Bot {
     contactBots: "ask",
     routines: [],
     playbooks: [],
-    cwd: null,
     pinned: false,
     archived: false,
     createdAt: NOW,
@@ -146,7 +144,7 @@ describe("server library", () => {
     await writeSkill({ id: "gated", text });
     const skill = (reviewedSha: string | null | undefined) => ({ id: "gated", description: "G", source: "", enabled: true, reviewedSha, createdAt: NOW, updatedAt: NOW });
     const names = async (reviewedSha: string | null | undefined) =>
-      (await promptContext(bot("gate-bot", { skillIds: ["gated"] }), true, { skills: [skill(reviewedSha)], mcpServers: [] }, false)).skills.map((entry) => entry.name);
+      (await promptContext(bot("gate-bot", { skillIds: ["gated"] }), { skills: [skill(reviewedSha)], mcpServers: [] }, false)).skills.map((entry) => entry.name);
     expect(await names(sha256(text))).toEqual(["gated"]);
     expect(await names(undefined)).toEqual(["gated"]);
     expect(await names(null)).toEqual([]);
@@ -166,9 +164,12 @@ describe("server library", () => {
 
   it("links a bot's skills into its folder and drops links it no longer uses", async () => {
     const { writeSkill, linkBotSkills, librarySkillPath } = await import("../server/library");
-    const { botDataPath } = await import("../server/bot-home");
+    const { botDataPath, ensureBotHome } = await import("../server/bot-home");
     await writeSkill({ id: "a", text: "---\nname: a\ndescription: A\n---\n" });
     await writeSkill({ id: "b", text: "---\nname: b\ndescription: B\n---\n" });
+    // Without a folder yet, the bot reads the library copies.
+    expect((await linkBotSkills("bot-x", ["a"])).get("a")).toBe(join(librarySkillPath("a"), "SKILL.md"));
+    await ensureBotHome(bot("bot-x"));
     const paths = await linkBotSkills("bot-x", ["a", "b"]);
     expect(paths.get("a")).toBe(join(botDataPath("bot-x"), "skills", "a", "SKILL.md"));
     expect(await readlink(join(botDataPath("bot-x"), "skills", "a"))).toBe(librarySkillPath("a"));
@@ -179,10 +180,10 @@ describe("server library", () => {
 
   it("moves skills that lived in a bot's folder into the library", async () => {
     const { migrateBotSkills, readSkill } = await import("../server/library");
-    const { botDataPath } = await import("../server/bot-home");
+    const { legacyBotsPath } = await import("../server/bot-home");
     const { mkdir } = await import("node:fs/promises");
-    await mkdir(join(botDataPath("bot-old"), "skills", "legacy"), { recursive: true });
-    await writeFile(join(botDataPath("bot-old"), "skills", "legacy", "SKILL.md"), "---\nname: legacy\ndescription: Old\n---\n");
+    await mkdir(join(legacyBotsPath(), "bot-old", "skills", "legacy"), { recursive: true });
+    await writeFile(join(legacyBotsPath(), "bot-old", "skills", "legacy", "SKILL.md"), "---\nname: legacy\ndescription: Old\n---\n");
     await migrateBotSkills();
     expect((await readSkill({ id: "legacy" })).text).toContain("Old");
   });

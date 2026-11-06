@@ -1,7 +1,9 @@
-import { lstatSync, renameSync, symlinkSync } from "node:fs";
-import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstatSync, readdirSync, readFileSync, renameSync, symlinkSync } from "node:fs";
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { avatarSvg } from "../shared/avatar";
+import type { Bot } from "../shared/bot";
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
@@ -38,13 +40,87 @@ export function migrateRenamedPluginData(): void {
 }
 
 /**
- * One folder for every bot that uses the managed folder. Paseo files each agent
- * under the workspace of its folder, so sharing it keeps all bot chats in a
- * single workspace; Paseo names the project after the folder, hence "Bots".
+ * Every bot's folder: `$XDG_CONFIG_HOME/paseo/bots/<name>`. Each folder is the
+ * working folder of the bot's own Paseo project, which Paseo names after the
+ * folder, and holds its memory, skills, runbooks, uploads and icon.
  */
-export function botsHomePath(): string {
+export function botsRoot(): string {
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "paseo", "bots");
+}
+
+/** The file in a bot's folder that names its bot; the folder keeps its name when the bot is renamed. */
+const MARKER = ".bot-id";
+
+/** Before 0.3 every bot had a folder named after its id in the shared "Bots" project. */
+export function legacyBotsPath(): string {
   // Nested because macOS folders are case-insensitive and "bots" held per-bot folders in v0.1.
   return join(pluginDataPath(), "shared", "Bots");
+}
+
+let known: { root: string; homes: Map<string, string> } | null = null;
+
+/** Bot id → folder name, read from the folders' markers once per root. */
+function homes(): Map<string, string> {
+  const root = botsRoot();
+  if (known?.root === root) return known.homes;
+  const found = new Map<string, string>();
+  let entries: { name: string; isDirectory(): boolean }[] = [];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    // No bot has a folder yet.
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    let id = "";
+    try {
+      id = readFileSync(join(root, entry.name, MARKER), "utf8").trim();
+    } catch {
+      continue;
+    }
+    if (id && !found.has(id)) found.set(id, entry.name);
+  }
+  known = { root, homes: found };
+  return found;
+}
+
+/** A bot's folder, or null until it gets one (ensureBotHome). */
+export function botHomeOf(botId: string): string | null {
+  const name = homes().get(botId);
+  return name ? join(botsRoot(), name) : null;
+}
+
+function isRealDirectory(path: string): boolean {
+  try {
+    const info = lstatSync(path);
+    return info.isDirectory() && !info.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where a bot's files are: its folder. Until it has one, its folder from before
+ * 0.3, or a holding folder whose files its first folder takes over.
+ */
+export function botDataPath(botId: string): string {
+  const home = botHomeOf(botId);
+  if (home) return home;
+  const legacy = join(legacyBotsPath(), botId);
+  return isRealDirectory(legacy) ? legacy : join(botsRoot(), ".pending", botId);
+}
+
+/** A folder name from a bot's name: "Scout" → "scout", "Café Bot" → "cafe-bot". */
+export function folderName(name: string): string {
+  const slug = name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return slug || "bot";
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -56,67 +132,118 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-let migration: Promise<void> | null = null;
+let legacyHome: Promise<void> | null = null;
 
 /**
  * Earlier versions used a folder called "home", which Paseo showed as a "home"
  * project. Move it to "Bots" and leave a link behind so existing chats keep
  * their working folder.
  */
-function migrateLegacyHome(): Promise<void> {
-  migration ??= (async () => {
+export function migrateLegacyHome(): Promise<void> {
+  legacyHome ??= (async () => {
     const legacy = join(pluginDataPath(), "home");
-    const target = botsHomePath();
+    const target = legacyBotsPath();
     const info = await lstat(legacy).catch(() => null);
     if (!info || info.isSymbolicLink() || !info.isDirectory() || (await exists(target))) return;
     await mkdir(join(target, ".."), { recursive: true });
     await rename(legacy, target);
     await symlink(target, legacy, "dir");
   })().catch((error: unknown) => console.error("paseo-bots: couldn't move the bots folder", error));
-  return migration;
+  return legacyHome;
 }
 
-/**
- * Each bot's own folder: the working folder of its workspace, and where its
- * memory, skills and uploads live so its chats can read and update them.
- */
-export function botDataPath(botId: string): string {
-  return join(botsHomePath(), botId);
+/** Renames a folder, copying it when the target is on another disk. */
+async function move(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    await cp(from, to, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+    await rm(from, { recursive: true, force: true });
+  }
 }
 
-/**
- * Paseo shows an icon.svg in a project's folder as the project icon. The Bots project gets
- * the plugin's sidebar glyph (Lucide's Bot) in white on a tile shaped and coloured like the
- * project icons Paseo draws itself (project-icon-view.tsx: 25% corners, the muted identity
- * blue), so it reads on light and dark themes alike.
- */
-const PROJECT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#5179b0"/><g transform="translate(12.8 12.8) scale(1.6)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></g></svg>`;
-
-export async function ensureBotsHome() {
-  await migrateLegacyHome();
-  const path = botsHomePath();
-  await mkdir(path, { recursive: true });
-  await writeFile(join(path, "README.md"), "paseo-bots: one folder per bot, each the working folder of that bot's workspace.\n", { flag: "w" });
-  await writeFile(join(path, "icon.svg"), PROJECT_ICON, { flag: "w" });
-  return { path };
-}
-
-/** Moves data kept under `.bots/<id>` by the previous version into the bot's own folder. */
-async function adoptLegacyData(botId: string, target: string): Promise<void> {
-  const legacy = join(botsHomePath(), ".bots", botId);
-  const names = await readdir(legacy).catch(() => null);
+/** Moves what an older or holding folder kept into the bot's folder, keeping files already there. */
+async function adopt(from: string, target: string): Promise<void> {
+  const names = await readdir(from).catch(() => null);
   if (!names) return;
   for (const name of names) {
     const destination = join(target, name);
-    if (!(await exists(destination))) await rename(join(legacy, name), destination);
+    if (!(await exists(destination))) await rename(join(from, name), destination);
   }
-  await rm(legacy, { recursive: true, force: true });
+  await rm(from, { recursive: true, force: true });
 }
 
-export async function ensureBotHome({ botId }: { botId: string }) {
-  const { path: root } = await ensureBotsHome();
-  const path = botDataPath(botId);
-  await mkdir(path, { recursive: true });
-  await adoptLegacyData(botId, path);
-  return { root, path };
+async function createHome(bot: Pick<Bot, "id" | "name" | "avatar">): Promise<string> {
+  await migrateLegacyHome();
+  const existing = botHomeOf(bot.id);
+  if (existing) return existing;
+  const root = botsRoot();
+  await mkdir(root, { recursive: true });
+  const base = folderName(bot.name);
+  let name = base;
+  for (let n = 2; await exists(join(root, name)); n++) name = `${base}-${n}`;
+  const path = join(root, name);
+  const legacy = join(legacyBotsPath(), bot.id);
+  if (isRealDirectory(legacy)) {
+    // The marker goes in first so the folder names its bot from the moment it moves.
+    await writeFile(join(legacy, MARKER), `${bot.id}\n`);
+    await move(legacy, path);
+    // Chats started in the old folder keep their working directory.
+    await symlink(path, legacy, "dir");
+  } else {
+    await mkdir(path);
+    await writeFile(join(path, MARKER), `${bot.id}\n`);
+  }
+  homes().set(bot.id, name);
+  await adopt(join(root, ".pending", bot.id), path);
+  // Data kept under `.bots/<id>` by v0.1.
+  await adopt(join(legacyBotsPath(), ".bots", bot.id), path);
+  return path;
+}
+
+let creating: Promise<unknown> = Promise.resolve();
+
+/**
+ * The bot's folder, created the first time it's needed and named after the bot
+ * at that moment. A bot from before 0.3 has its folder moved here, with a link
+ * left at the old path. One at a time, so two bots can't take the same name.
+ */
+export function ensureBotHome(bot: Pick<Bot, "id" | "name" | "avatar">): Promise<{ path: string }> {
+  const run = creating.then(async () => {
+    const path = await createHome(bot);
+    await writeBotIcon(path, bot.avatar);
+    return { path };
+  });
+  creating = run.catch(() => undefined);
+  return run;
+}
+
+/** Moves every bot's folder from before 0.3 to its own folder. */
+export async function migrateBotHomes(bots: readonly Bot[]): Promise<void> {
+  for (const bot of bots) {
+    if (botHomeOf(bot.id) || !isRealDirectory(join(legacyBotsPath(), bot.id))) continue;
+    await ensureBotHome(bot).catch((error: unknown) => console.error(`paseo-bots: couldn't move ${bot.name}'s folder`, error));
+  }
+}
+
+const ICON_FILES = ["icon.svg", "icon.png"] as const;
+
+/** The project icon file for an avatar: an uploaded PNG or SVG as it is, otherwise the generated face. */
+function iconFile(avatar: Bot["avatar"]): { name: (typeof ICON_FILES)[number]; data: Buffer } {
+  const image = /^data:image\/(png|svg\+xml);base64,(.+)$/.exec(avatar.imageUrl ?? "");
+  if (image) return { name: image[1] === "png" ? "icon.png" : "icon.svg", data: Buffer.from(image[2]!, "base64") };
+  return { name: "icon.svg", data: Buffer.from(avatarSvg(avatar)) };
+}
+
+/**
+ * Paseo shows an icon file in a project's folder as the project icon, so the
+ * bot's folder gets its avatar. Other pictures (JPEG, links) fall back to the
+ * generated face. Rewritten only when it changes.
+ */
+export async function writeBotIcon(home: string, avatar: Bot["avatar"]): Promise<void> {
+  const icon = iconFile(avatar);
+  const current = await readFile(join(home, icon.name)).catch(() => null);
+  if (!current?.equals(icon.data)) await writeFile(join(home, icon.name), icon.data);
+  for (const other of ICON_FILES) if (other !== icon.name) await unlink(join(home, other)).catch(() => undefined);
 }

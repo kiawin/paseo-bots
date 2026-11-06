@@ -3,7 +3,7 @@ import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { botProblems, type Bot, type BotGroup, type HistoryEntry, type Library } from "../../shared/bot";
-import { useBotHost, type LocalHost } from "../data";
+import type { LocalHost } from "../data";
 import { nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
 import { AccessSection, ModelSection, PermissionsSection } from "./AgentSections";
@@ -104,11 +104,10 @@ interface BotPanelProps extends PanelProps {
  * section list, and a pushed detail page whose header carries a back arrow.
  */
 export function BotPanel(props: BotPanelProps) {
-  const { colors, bot, localHost, section, onSection, onClose, bottomInset } = props;
+  const { colors, bot, section, onSection, onClose, bottomInset } = props;
   const compact = useCompact(props.compact);
   const [query, setQuery] = useState("");
-  const host = useBotHost(bot.hostId, localHost);
-  const problems = botProblems(bot, host.isLocal);
+  const problems = botProblems(bot);
   const open = section ? SECTIONS.find((entry) => entry.id === section && !entry.modal) : undefined;
   const [sheet, setSheet] = useState<SectionEntry | null>(null);
   const choose = (entry: SectionEntry) => (entry.modal ? setSheet(entry) : onSection(entry.id));

@@ -1,5 +1,5 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
+import { botHomeOf, ensureBotHome, migrateBotHomes, migrateLegacyHome, migrateRenamedPluginData, writeBotIcon } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
@@ -19,6 +19,7 @@ import { acceptProposal, dismissProposal, getProposal } from "./server/proposals
 import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
 import { botSettings, EMPTY_LIBRARY } from "./shared/bot";
+import { syncBotWorkspaceTitle } from "./shared/chat";
 import { shellCommand } from "./shared/commands";
 import {
   commandAllowRpc,
@@ -75,16 +76,33 @@ export default function contribute(server: PluginServerContext) {
   } catch (error) {
     console.error("paseo-bots: couldn't move the data of the old paseo-bot plugin", error);
   }
-  // Moves the old folder if needed and writes the Bots project icon.
-  void ensureBotsHome()
-    .then(migrateBotSkills)
-    .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const library = async () => {
     const state = await settings.read();
     return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
   };
   const host = new BotsHost(settings);
+  // Older folders move first: "home" to "Bots", skills into the library, then each bot to its own folder.
+  void migrateLegacyHome()
+    .then(migrateBotSkills)
+    .then(async () => migrateBotHomes(await host.bots()))
+    .catch((error: unknown) => console.error("paseo-bots: couldn't move the bots' folders", error));
+  // A bot's project follows its name and avatar.
+  const stopSync = settings.subscribe(async (state) => {
+    if (state.status !== "ready") return;
+    for (const bot of state.values.bots) {
+      const home = botHomeOf(bot.id);
+      if (!home) continue;
+      await writeBotIcon(home, bot.avatar).catch((error: unknown) => console.error(`paseo-bots: couldn't update ${bot.name}'s icon`, error));
+      if (host.paseo && bot.name.trim()) await syncBotWorkspaceTitle(host.paseo, bot, home).catch(() => undefined);
+    }
+  });
+  /** The bot's folder, created on first use. */
+  const homeOf = async (botId: string) => {
+    const bot = await host.bot(botId);
+    if (!bot) throw new Error("This bot no longer exists.");
+    return (await ensureBotHome(bot)).path;
+  };
   // Bots' tools and connected apps go through this relay; it reads the saved settings on every call.
   const relay = new Relay(host, BOT_TOOLS);
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
@@ -98,14 +116,15 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return { scheduler: scheduler.running };
   });
-  server.handle(ensureBotHomeRpc, (input, context) => {
+  server.handle(ensureBotHomeRpc, async ({ botId }, context) => {
     attach(context);
-    return ensureBotHome(input);
+    return { path: await homeOf(botId) };
   });
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
   server.handle(memoryReadRpc, ({ botId, name }) => readMemory(botId, name));
   server.handle(memoryWriteRpc, async ({ botId, name, text }) => {
+    await homeOf(botId);
     await journal.write(botId, name, text);
     return { ok: true };
   });
@@ -164,7 +183,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(importBotRpc, importBot);
   server.handle(exportTeamRpc, async (input) => exportTeam(input, await library()));
   server.handle(importTeamRpc, importTeam);
-  server.handle(uploadRpc, saveUpload);
+  server.handle(uploadRpc, async ({ botId, ...file }) => saveUpload(await homeOf(botId), file));
   server.on("agent.turn_started", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
@@ -187,6 +206,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return () => {
+    stopSync();
     stopGenUi();
     scheduler.stop();
     relay.stop();

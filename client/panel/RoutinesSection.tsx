@@ -70,7 +70,7 @@ function runTime(at: Date, now: Date): string {
 }
 
 export function RoutinesSection({ colors, bot, localHost, onPatch, flush, onOpenChat }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const status = useRpc(routineStatusRpc);
   const runNow = useRpc(routineRunNowRpc);
   const webhook = useRpc(routineWebhookRpc);

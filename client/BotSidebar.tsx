@@ -273,7 +273,7 @@ function PinnedSection(props: PinnedProps) {
 }
 
 function PinnedChatRow({ colors, tokens, bot, chatId, selection, localHost, touch, onSelect, onChatMenu }: PinnedProps & { bot: Bot; chatId: string }) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const chat = chats.data?.find((entry) => entry.id === chatId);
   if (!chat) return null;
@@ -298,7 +298,7 @@ type GroupProps = BotSidebarProps & { bot: Bot; tokens: NativeTokens; pinnedIds:
 
 function BotGroup(props: GroupProps) {
   const { colors, tokens, bot, selection, ui: listUi, localHost, touch, pinnedIds, onSelect, onChatMenu } = props;
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const [expanded, setExpanded] = useState(false);
   const isOpen = !listUi.collapsed.includes(bot.id);
