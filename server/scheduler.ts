@@ -203,7 +203,7 @@ export class RoutineScheduler {
   }
 
   private newChat(bot: Bot, routine: Routine, prompt: string): Promise<string> {
-    return startChat(this.host, this.relay, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
+    return startChat(this.host, bot, { prompt, title: routine.name, labels: { [ROUTINE_LABEL]: routine.id } });
   }
 
   /** Starts a run in a new chat, or records why it didn't; the results chat gets a card either way. */

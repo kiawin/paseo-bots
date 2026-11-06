@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { avatarSvg } from "../shared/avatar";
 import type { Bot } from "../shared/bot";
+import { playbookRunbook, runbookFileName, RUNBOOKS_FOLDER } from "../shared/playbooks";
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
@@ -188,7 +189,7 @@ async function adopt(from: string, target: string): Promise<void> {
   await rm(from, { recursive: true, force: true });
 }
 
-async function createHome(bot: Pick<Bot, "id" | "name" | "avatar">): Promise<string> {
+async function createHome(bot: HomeBot): Promise<string> {
   await migrateLegacyHome();
   const existing = botHomeOf(bot.id);
   if (existing) return existing;
@@ -213,8 +214,27 @@ async function createHome(bot: Pick<Bot, "id" | "name" | "avatar">): Promise<str
   await adopt(join(root, ".pending", bot.id), path);
   // Data kept under `.bots/<id>` by v0.1.
   await adopt(join(legacyBotsPath(), ".bots", bot.id), path);
+  await seedRunbooks(path, bot.playbooks);
   return path;
 }
+
+/** A new folder's first runbooks are the bot's playbooks; a folder that has runbooks keeps them. */
+async function seedRunbooks(home: string, playbooks: HomeBot["playbooks"]): Promise<void> {
+  const folder = join(home, RUNBOOKS_FOLDER);
+  if (await exists(folder)) return;
+  await mkdir(folder);
+  const taken = new Set<string>();
+  for (const playbook of playbooks) {
+    if (!playbook.instructions.trim()) continue;
+    const base = runbookFileName(playbook.name);
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+    taken.add(name);
+    await writeFile(join(folder, `${name}.md`), playbookRunbook(playbook), "utf8");
+  }
+}
+
+type HomeBot = Pick<Bot, "id" | "name" | "avatar" | "playbooks">;
 
 let creating: Promise<unknown> = Promise.resolve();
 
@@ -223,7 +243,7 @@ let creating: Promise<unknown> = Promise.resolve();
  * at that moment. A bot from before 0.3 has its folder moved here, with a link
  * left at the old path. One at a time, so two bots can't take the same name.
  */
-export function ensureBotHome(bot: Pick<Bot, "id" | "name" | "avatar">): Promise<{ path: string }> {
+export function ensureBotHome(bot: HomeBot): Promise<{ path: string }> {
   const run = creating.then(async () => {
     const path = await createHome(bot);
     await writeBotIcon(path, bot.avatar);

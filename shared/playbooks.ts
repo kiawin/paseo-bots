@@ -1,33 +1,31 @@
 import type { Playbook } from "./bot";
+import { parseSkillFrontmatter, sanitizeSkillName, skillMarkdown } from "./skills";
 
-// OpenMausBot's playbooks: process guidance with trigger words. A chat gets a
-// playbook only when one of its triggers appears in the job (the chat's first
-// message), so unrelated guidance stays out of the prompt.
+// Runbooks: step-by-step guides for a bot's recurring jobs, one Markdown file
+// each in the runbooks folder of the bot's own folder. Every chat lists them,
+// like skills, and the bot reads the one a job needs. Playbooks (OpenMausBot's
+// trigger-word guidance, kept in the settings by templates, presets and older
+// bots) become the bot's first runbooks when it gets its folder.
 
-const MAX_SELECTED = 3;
-const MAX_CHARS = 24_000;
+export const RUNBOOKS_FOLDER = "runbooks";
 
-const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-
-/** The playbooks whose trigger words or phrases appear in `text`, at most three. */
-export function selectPlaybooks(text: string, playbooks: readonly Playbook[]): Playbook[] {
-  const job = ` ${normalize(text)} `;
-  return playbooks
-    .filter((playbook) => playbook.instructions.trim() && playbook.triggers.some((trigger) => normalize(trigger) && job.includes(` ${normalize(trigger)} `)))
-    .slice(0, MAX_SELECTED);
+/** A runbook file's name (without `.md`) from its title. */
+export function runbookFileName(name: string): string {
+  return sanitizeSkillName(name);
 }
 
-/** The prompt text for the chosen playbooks, within 24,000 characters. */
-export function renderPlaybooks(playbooks: readonly Playbook[]): string {
-  let remaining = MAX_CHARS;
-  const parts: string[] = [];
-  for (const playbook of playbooks) {
-    if (remaining <= 0) break;
-    const instructions = playbook.instructions.trim().slice(0, remaining);
-    remaining -= instructions.length;
-    parts.push(`<playbook name=${JSON.stringify(playbook.name)}>\n${instructions}\n</playbook>`);
-  }
-  return ["Playbooks that match this job. Follow them as process guidance; they don't grant tools or permissions, or override the user.", ...parts].join("\n");
+/** A playbook as a runbook file: its triggers become the description that says when to use it. */
+export function playbookRunbook(playbook: Pick<Playbook, "name" | "triggers" | "instructions">): string {
+  const when = playbook.triggers.length ? `Use when the job mentions ${playbook.triggers.join(", ")}.` : `How to handle ${playbook.name}.`;
+  return skillMarkdown(playbook.name.replace(/\s+/g, " ").trim(), when, playbook.instructions);
+}
+
+/** What a runbook is for: its frontmatter description, else its first line of text. */
+export function runbookDescription(text: string): string {
+  const description = parseSkillFrontmatter(text).description;
+  if (description) return description;
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  return (body.split(/\r?\n/).find((line) => line.trim()) ?? "").replace(/^#+\s*/, "").trim().slice(0, 200);
 }
 
 /** "invoice, receipt, expense report" as trigger phrases. */

@@ -44,7 +44,7 @@ const PromptSectionSchema = z.object({ title: z.string(), text: z.string() });
 /** The bot's system prompt as it would be sent now, with its memory and skills; `message` (a new chat's first) picks its playbooks. */
 export const systemPromptRpc = defineRpc({
   name: "bots.system-prompt",
-  input: z.object({ bot: BotSchema, message: z.string().max(100_000).optional() }),
+  input: z.object({ bot: BotSchema }),
   output: z.object({ systemPrompt: z.string(), sections: z.array(PromptSectionSchema) }),
 });
 
@@ -343,16 +343,6 @@ export const appsDisconnectRpc = defineRpc({
   output: z.object({ ok: z.boolean() }),
 });
 
-/**
- * The plugin's MCP servers for a new chat of a local bot: its tools, and
- * connected apps when the bot uses them. `agentId` is the chat's id, picked
- * before the chat is created.
- */
-export const mountRpc = defineRpc({
-  name: "bots.mount",
-  input: z.object({ botId: BotId, agentId: z.uuid() }),
-  output: z.object({ tools: McpServerConfigSchema, apps: McpServerConfigSchema.nullable() }),
-});
 
 // ---------------------------------------------------------------- proposals
 

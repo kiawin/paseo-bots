@@ -1,5 +1,5 @@
 import type { WireAttachment } from "./attachments";
-import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type Library, type PluginServers } from "./bot";
+import { BOT_LABEL, defaultModelId, type Bot } from "./bot";
 
 /** Label on chats started by a routine, carrying the routine id. */
 export const ROUTINE_LABEL = "paseo-bots.routine";
@@ -29,8 +29,7 @@ interface WorkspaceHandle {
   setTitle(title: string): Promise<unknown>;
   readonly agents: {
     create(options: {
-      agentId?: string;
-      config: ReturnType<typeof buildAgentConfig>;
+      config: { provider: string };
       labels: Record<string, string>;
       prompt: string;
       title?: string;
@@ -109,16 +108,9 @@ export async function listBotChats<Agent extends ChatAgent>(
 
 export interface StartChatInput {
   bot: Bot;
-  /** Resolves the bot's MCP servers. */
-  library: Library;
-  /** The chat's agent id, picked in advance so its tools URL can name it. */
-  agentId?: string;
-  /** The plugin's servers for this chat (tools, connected apps), from the relay on the bot's host. */
-  plugin?: PluginServers;
   /** The bot's folder (ensureBotHome). */
   home: string;
   prompt: string;
-  systemPrompt: string;
   /** Defaults to Paseo's own title derived from the prompt. */
   title?: string;
   labels?: Record<string, string>;
@@ -128,16 +120,18 @@ export interface StartChatInput {
 }
 
 /**
- * Starts a chat (a thread in the bot's workspace) with the bot's configuration
- * and sends the first message. Used by the app and by the routine scheduler.
+ * Starts a chat (a thread in the bot's workspace) and sends the first message.
+ * Used by the app, the routine scheduler and bots asking each other. The
+ * plugin's agent.create hook gives every new agent in the bot's folder the
+ * bot's configuration, so this only names the provider and model, which the
+ * SDK needs, and labels the chat.
  */
 export async function startBotChat(api: ChatApi, input: StartChatInput): Promise<string> {
   const { bot } = input;
   const model = bot.model ?? (await resolveDefaultModel(api, bot.provider));
   const workspace = await ensureBotWorkspace(api, bot, input.home);
   const agent = await workspace.agents.create({
-    ...(input.agentId ? { agentId: input.agentId } : {}),
-    config: buildAgentConfig(bot, input.library, model, input.systemPrompt, input.plugin),
+    config: { provider: `${bot.provider}/${model}` },
     labels: { [BOT_LABEL]: bot.id, ...input.labels },
     prompt: input.prompt,
     ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),

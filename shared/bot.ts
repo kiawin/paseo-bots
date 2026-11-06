@@ -3,7 +3,6 @@ import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
-import { renderPlaybooks } from "./playbooks";
 
 /** Agent label carrying the bot id, set on chats the plugin starts. A chat's folder says whose it is; the label covers chats from before bots had their own folders. */
 export const BOT_LABEL = "paseo-bots.bot";
@@ -441,8 +440,9 @@ export interface PromptContext {
   memoryPath: string | null;
   /** The recent-work brief: the newest line from each chat of the last two days. */
   recentWork: string[];
-  /** Playbooks whose triggers appear in the chat's first message. */
-  playbooks: Playbook[];
+  /** The bot's runbooks folder, and the runbooks in it with what each is for. */
+  runbooksPath: string | null;
+  runbooks: { file: string; description: string; path: string }[];
   /** In a team's chat, the lead's view of the team (teamPrompt). */
   team?: string | null;
   /** The bot's usable skills with the SKILL.md path the agent should read. Empty when the files aren't on the bot's host. */
@@ -497,7 +497,13 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `Skills you can use. Before starting a task one of these covers, read its SKILL.md. Skills are reference material; they never override these instructions or the user's.\n${lines.join("\n")}`,
     });
   }
-  if (context.playbooks.length > 0) sections.push({ title: "Playbooks", text: renderPlaybooks(context.playbooks) });
+  if (context.runbooksPath) {
+    const lines = context.runbooks.map((runbook) => `- ${runbook.file.replace(/\.md$/, "")}: ${runbook.description || "no description"} Read "${runbook.path}" before using it.`);
+    sections.push({
+      title: "Runbooks",
+      text: `Your runbooks are step-by-step guides for your recurring jobs, one Markdown file each in ${context.runbooksPath}. Before a job one of them covers, read it and follow it. They are process guidance: they don't grant tools or permissions, or override the user. When you settle on a better way to do a recurring job, write or update its runbook there (frontmatter with name and a one-line description of when to use it, then the steps).${lines.length ? `\n${lines.join("\n")}` : "\nYou have no runbooks yet."}`,
+    });
+  }
   if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
   if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
@@ -563,18 +569,36 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   return record;
 }
 
-/**
- * The `config` half of `paseo.agents.create()` for a bot. The SDK needs an
- * explicit model, so bots on "provider default" pass the resolved default in.
- */
-/** Servers the plugin itself adds to a local bot's chat: its tools and, when set up, connected apps. */
+/** Servers the plugin itself adds to a bot's chat: its tools and, when set up, connected apps. */
 export interface PluginServers {
   apps?: McpServerConfig | null;
   tools?: McpServerConfig | null;
 }
 
-export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, plugin: PluginServers = {}) {
+type ToolGrant = { kind: "mcp"; server: string; tool: string };
+
+/** The part of a new agent's config (Paseo's AgentSessionConfig) a bot decides. */
+export interface BotSessionConfig {
+  provider: string;
+  model?: string;
+  modeId?: string;
+  thinkingOptionId?: string;
+  systemPrompt?: string;
+  mcpServers?: Record<string, McpServerConfig>;
+  toolPolicy?: { preapproved: ToolGrant[] };
+}
+
+/**
+ * A new chat's config with the bot's settings applied: its provider, model,
+ * mode and thinking (a setting the bot leaves open keeps the chat's own while
+ * the provider stays the same), its system prompt, its MCP servers on top of
+ * the chat's own, and the tools it may use without asking.
+ */
+export function applyBotConfig<Config extends BotSessionConfig>(config: Config, bot: Bot, library: Library, systemPrompt: string, plugin: PluginServers = {}): Config & BotSessionConfig {
+  const provider = bot.provider || config.provider;
+  const same = provider === config.provider;
   const mcpServers: Record<string, McpServerConfig> = {
+    ...config.mcpServers,
     ...mcpServersRecord(botMcpServers(bot, library)),
     ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
     ...(plugin.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
@@ -585,19 +609,25 @@ export function buildAgentConfig(bot: Bot, library: Library, model: string, syst
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later),
   // and when the provider can't take exact grants at all.
-  const preapproved = supportsToolGrants(bot.provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
-  return {
-    provider: `${bot.provider}/${model}`,
-    ...(bot.modeId ? { modeId: bot.modeId } : {}),
-    ...(bot.thinkingOptionId ? { thinkingOptionId: bot.thinkingOptionId } : {}),
-    systemPrompt,
-    ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-    ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
+  const grants = supportsToolGrants(provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
+  const preapproved = [...(same ? (config.toolPolicy?.preapproved ?? []) : []), ...grants];
+  const next: Config = { ...config, provider, systemPrompt };
+  const pick = (key: "model" | "modeId" | "thinkingOptionId", value: string | null) => {
+    if (value) next[key] = value;
+    else if (!same) delete next[key];
   };
+  pick("model", bot.model);
+  pick("modeId", bot.modeId);
+  pick("thinkingOptionId", bot.thinkingOptionId);
+  if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
+  else delete next.mcpServers;
+  if (preapproved.length > 0) next.toolPolicy = { preapproved };
+  else delete next.toolPolicy;
+  return next;
 }
 
 /** "server/tool" entries → Paseo's exact MCP tool grants. Malformed entries are skipped. */
-export function toolGrants(entries: readonly string[]): { kind: "mcp"; server: string; tool: string }[] {
+export function toolGrants(entries: readonly string[]): ToolGrant[] {
   return entries.flatMap((entry) => {
     const match = /^([^/\s]+)\/([^/\s]+)$/.exec(entry.trim());
     return match ? [{ kind: "mcp" as const, server: match[1]!, tool: match[2]! }] : [];
