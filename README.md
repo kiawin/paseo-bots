@@ -4,21 +4,21 @@
 
 # paseo-bots
 
-Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give each bot instructions, a model, memory, skills and tools, then chat with it in its own workspace or let it run routines.
+Personal bots for [Paseo](https://paseo.sh), like Grok Bot or Hermes Bots. Give each bot instructions, a model, memory, skills and tools, then chat with it in its own Paseo project or let it run routines.
 
 ## Core Features
 
 | Feature | Description |
 | --- | --- |
-| **Bots** | Instructions, provider and model, host, approval mode and an avatar. Start blank or from a role such as Email triage or Researcher, or ask a bot to set them up. |
+| **Bots** | Instructions, provider and model, approval mode and an avatar. Each bot is its own Paseo project, with Paseo's chat view, browser and terminals. Start blank or from a role such as Email triage or Researcher, or ask a bot to set them up. |
 | **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. |
+| **Runbooks** | Step-by-step guides for a bot's recurring jobs, as Markdown files in its folder. Every chat lists them, and the bot can improve them. |
 | **Routines** | Runs on a schedule, such as every weekday at 9:00, or when its webhook is called. |
 | **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. Each team gets a tab and a pixel-art logo. |
 | **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub and MCP servers from Claude Code, Claude Desktop or Cursor. |
 | **Learning** | Send `/learn` after a task and the bot writes it up as a skill. |
 | **Connected apps** | 1,000+ apps such as Gmail, Slack and Notion through [Composio](https://composio.dev), with several named accounts per app. |
 | **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
-| **Generative UI** | Local bot chats render GenUI `ui` and `app` blocks inline, including interactive controls. |
 
 ## Screenshots
 
@@ -43,11 +43,16 @@ Or paste `npm:@oliexe/paseo-bots` into **Settings → Plugins → Plugin source*
 
 ### Bots
 
-1. Open **Bots** in Paseo's sidebar and press **New bot**. Start blank, from a role, from one of your presets, or paste a bot or team file under **Import**.
-2. Chat with it. Every chat is a thread in the bot's workspace; **Open in Paseo** in a chat's menu shows it in Paseo's own view.
-3. Open its settings with the panel button at the top right of a chat, or **Open bot settings** in the bot's menu. **Identity** holds the name, avatar and voice, **Soul** its standing instructions, **Model** the provider and model, and **Permissions** the approval mode.
+1. Open **Bots** in Paseo's sidebar and press **New bot**. Start blank, from a role, from one of your presets, or paste a bot or team file under **Import**. Give it a name first: its folder is named after it the first time you open it.
+2. Open it: pick it under **Bots** in Paseo's sidebar or on the Bots screen. Each bot is its own Paseo project, in `~/.config/paseo/bots/<name>` (`$XDG_CONFIG_HOME` if set), with the bot's avatar as its icon. Its workspace has Paseo's own chat view, browser, terminals and files, and a **Bot** panel with its settings, memory, routines and runbooks. The button with the bot's avatar in the workspace header opens the panel again.
+3. Chat with it. Every new agent in the bot's workspace is the bot, however you start it: it gets the bot's instructions, model, memory, skills, runbooks and tools. A chat in the Bots screen's list opens in Paseo's agent view.
+4. In the **Bot** panel, **Identity** holds the name and avatar, **Soul** its standing instructions, **Model** the provider and model, and **Permissions** the approval mode.
 
 Bots can do the setting up too. Ask one in a chat, for example "Create a research team of three bots with Scout as Chief of Staff", and it shows every change on one card; **Apply changes** makes them. A bot can create, edit and delete bots, teams, routines, library skills and MCP servers, and change what new bots start with. Each bot's earlier settings stay under **History** in its settings.
+
+### Runbooks
+
+A bot's runbooks are Markdown files in the `runbooks` folder of its own folder, one per recurring job, with a `description` in the frontmatter that says when to use it. Every chat lists them, and the bot reads the one a job needs and can write better ones. Open **Runbooks** in the bot's panel to add or edit them. A new bot's playbooks (from a role, a preset or an import) become its first runbooks.
 
 ### Memory
 
@@ -108,3 +113,11 @@ The key stays on the Paseo host and never reaches the agents: bots reach Composi
 ### Paseo tools
 
 Bots get Paseo's own tools, so you can ask one in a chat to start other agents, open workspaces and terminals, set up schedules or use the browser. A bot's **Access** settings show whether they're on, and **Turn on** there switches them on for every agent on the host.
+
+## Moving from 0.2
+
+Bots used to share one "Bots" project, with their files in `~/.paseo/plugin-data/paseo-bots/shared/Bots/<bot id>`. When 0.3 starts, it moves each bot's folder to `~/.config/paseo/bots/<name>` and leaves a link at the old path, so older chats keep working and still count as the bot's. Older chats stay in the old Bots project; you can archive its workspaces once you no longer need them. A bot's playbooks become files in its `runbooks` folder.
+
+Bots no longer have a working folder or a host of their own. A bot that worked in another folder now works in its own folder; ask it to work on a project by its path, or to start an agent there with Paseo's tools.
+
+To undo the move for one bot, quit Paseo, delete the link at the old path, and move the folder back there (for example `rm ~/.paseo/plugin-data/paseo-bots/shared/Bots/<bot id>` and `mv ~/.config/paseo/bots/<name> ~/.paseo/plugin-data/paseo-bots/shared/Bots/<bot id>`), then go back to 0.2.
