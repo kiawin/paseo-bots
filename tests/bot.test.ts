@@ -86,7 +86,9 @@ describe("applyBotConfig", () => {
     expect(parentClaudeMdFiles("/home/me/.config/paseo/bots/scout")).toContain("/home/me/.claude/CLAUDE.md");
     expect(parentClaudeMdFiles("/home/me/.config/paseo/bots/scout")).toContain("/CLAUDE.md");
     expect(parentClaudeMdFiles("/home/me/.config/paseo/bots/scout").some((file) => file.startsWith("/home/me/.config/paseo/bots/scout/"))).toBe(false);
-    expect(JSON.parse(claudeBotArgs("/bots/b").settings!)).toEqual({ claudeMdExcludes: parentClaudeMdFiles("/bots/b") });
+    expect(JSON.parse(claudeBotArgs("/bots/b").settings!)).toEqual({ autoMemoryEnabled: false, claudeMdExcludes: parentClaudeMdFiles("/bots/b") });
+    // The bot's MEMORY.md is its only memory, wherever it runs.
+    expect(JSON.parse(claudeBotArgs(undefined).settings!)).toEqual({ autoMemoryEnabled: false });
     expect(applyBotConfig({ ...base, provider: "claude" }, bot({ provider: "codex" }), EMPTY_LIBRARY, "")).not.toHaveProperty("providerOptions");
   });
 
