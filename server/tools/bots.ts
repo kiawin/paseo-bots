@@ -1,7 +1,6 @@
 import type { PaseoApi } from "../paseo";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
-import { BOT_LABEL } from "../../shared/bot";
 import { startChat } from "../chats";
 import { defineTool, type ToolCaller } from "./mcp";
 
@@ -110,7 +109,7 @@ export const checkChat = defineTool({
   async run({ chat_id: chatId, wait = false }, { bot, host }) {
     const paseo = host.requirePaseo();
     let chat = await readChat(paseo, chatId.trim());
-    const owner = chat.labels[BOT_LABEL];
+    const owner = (await host.chatOf(chatId.trim()))?.botId;
     if (owner !== bot.id && chat.labels[ASKED_BY_LABEL] !== bot.id) throw new Error("You can only check your own chats and ones you started with ask_bot.");
     if (wait && chat.state === "running") {
       await paseo.agents.ref(chatId.trim()).waitForFinish(ASK_WAIT_MS).catch(() => null);

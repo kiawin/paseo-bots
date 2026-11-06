@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync, renameSync, symlinkSync } from "node:fs";
-import { cp, lstat, mkdir, readdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { avatarSvg } from "../shared/avatar";
 import type { Bot } from "../shared/bot";
 
@@ -88,6 +88,20 @@ function homes(): Map<string, string> {
 export function botHomeOf(botId: string): string | null {
   const name = homes().get(botId);
   return name ? join(botsRoot(), name) : null;
+}
+
+/**
+ * The bot whose folder holds `path` (an agent's working folder), compared by
+ * real path so links (the old Bots folders) count; null for any other folder.
+ */
+export async function botIdAt(path: string): Promise<string | null> {
+  const [real, root] = await Promise.all([realpath(path).catch(() => null), realpath(botsRoot()).catch(() => null)]);
+  if (!real || !root) return null;
+  const inside = relative(root, real);
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) return null;
+  const name = inside.split(sep)[0];
+  for (const [botId, folder] of homes()) if (folder === name) return botId;
+  return null;
 }
 
 function isRealDirectory(path: string): boolean {

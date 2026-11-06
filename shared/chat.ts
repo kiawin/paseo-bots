@@ -41,7 +41,20 @@ interface WorkspaceHandle {
   };
 }
 
+interface ChatAgent {
+  id: string;
+  updatedAt: string;
+  archivedAt?: string | null;
+}
+
+type AgentListOptions = {
+  filter: { labels?: Record<string, string>; projectKeys?: string[]; includeArchived?: boolean };
+  sort?: { key: "updated_at"; direction: "desc" }[];
+  page?: { limit: number };
+};
+
 export interface ChatApi {
+  readonly projects: { list(): Promise<{ projects: { projectKey?: string; projectRootPath: string }[] }> };
   readonly workspaces: {
     list(): Promise<{ entries: ChatWorkspace[] }>;
     ref(workspace: string | ChatWorkspace): WorkspaceHandle;
@@ -72,6 +85,26 @@ export async function syncBotWorkspaceTitle(api: ChatApi, bot: Pick<Bot, "name">
   const { entries } = await api.workspaces.list();
   const mine = entries.find((workspace) => normalize(workspace.workspaceDirectory ?? workspace.projectRootPath) === normalize(home));
   if (mine && mine.title !== bot.name) await api.workspaces.ref(mine).setTitle(bot.name);
+}
+
+/**
+ * A bot's chats, newest first: the ones in its own project (`home`, its folder,
+ * when it has one) and older ones labelled with it, from the shared Bots project
+ * or a working folder it used to have.
+ */
+export async function listBotChats<Agent extends ChatAgent>(
+  api: { readonly projects: ChatApi["projects"]; readonly agents: { list(options: AgentListOptions): Promise<{ entries: { agent: Agent }[] }> } },
+  botId: string,
+  home: string | null,
+  options: { includeArchived?: boolean; limit?: number } = {},
+): Promise<Agent[]> {
+  const query = (filter: AgentListOptions["filter"]) =>
+    api.agents.list({ filter: { ...filter, includeArchived: options.includeArchived ?? false }, sort: [{ key: "updated_at", direction: "desc" }], ...(options.limit ? { page: { limit: options.limit } } : {}) });
+  const project = home ? (await api.projects.list()).projects.find((entry) => normalize(entry.projectRootPath) === normalize(home)) : undefined;
+  const [labelled, own] = await Promise.all([query({ labels: { [BOT_LABEL]: botId } }), project?.projectKey ? query({ projectKeys: [project.projectKey] }) : null]);
+  const chats = new Map<string, Agent>();
+  for (const { agent } of [...(own?.entries ?? []), ...labelled.entries]) chats.set(agent.id, agent);
+  return [...chats.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, options.limit ?? Infinity);
 }
 
 export interface StartChatInput {

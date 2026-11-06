@@ -1,8 +1,9 @@
-import { usePaseo } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { BOT_LABEL } from "../shared/bot";
+import { listBotChats } from "../shared/chat";
+import { botHomeRpc } from "../shared/rpc";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 
 export interface LocalHost {
@@ -47,17 +48,15 @@ export function useAgentProfiles(host: BotHost) {
 }
 
 export function useBotChats(host: BotHost, botId: string) {
+  const botHome = useRpc(botHomeRpc);
   return useQuery({
     queryKey: ["paseo-bots", "chats", host.key, botId],
     enabled: !!host.api,
     // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
     refetchInterval: host.isLocal ? false : 15_000,
     queryFn: async (): Promise<PaseoAgent[]> => {
-      const result = await host.api!.agents.list({ filter: { labels: { [BOT_LABEL]: botId } } });
-      return result.entries
-        .map((entry) => entry.agent)
-        .filter((agent) => !agent.archivedAt)
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+      const { path } = await botHome({ botId });
+      return (await listBotChats(host.api!, botId, path)).filter((agent) => !agent.archivedAt);
     },
   });
 }

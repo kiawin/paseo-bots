@@ -50,6 +50,8 @@ import {
   avatarKeyStatusRpc,
   avatarRemoveKeyRpc,
   avatarSetKeyRpc,
+  botHomeRpc,
+  chatBotRpc,
   appsCatalogRpc,
   appsConnectRpc,
   appsDisconnectRpc,
@@ -119,6 +121,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(ensureBotHomeRpc, async ({ botId }, context) => {
     attach(context);
     return { path: await homeOf(botId) };
+  });
+  server.handle(botHomeRpc, ({ botId }) => ({ path: botHomeOf(botId) }));
+  server.handle(chatBotRpc, async ({ agentId }, context) => {
+    attach(context);
+    return { botId: (await host.chatOf(agentId))?.botId ?? null };
   });
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
