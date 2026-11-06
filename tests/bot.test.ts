@@ -70,22 +70,20 @@ describe("applyBotConfig", () => {
     expect(config).toEqual({ ...base, model: "claude-opus-5-5", modeId: "default", systemPrompt: "PROMPT" });
   });
 
-  it("keeps the chat's own choices the bot leaves open, unless the provider changes", () => {
-    const chat = { ...base, model: "picked", modeId: "plan", thinkingOptionId: "high" };
-    expect(applyBotConfig(chat, bot(), EMPTY_LIBRARY, "")).toMatchObject({ provider: "claude", model: "picked", modeId: "plan", thinkingOptionId: "high" });
-    const codex = applyBotConfig(chat, bot({ provider: "codex" }), EMPTY_LIBRARY, "");
-    expect(codex.provider).toBe("codex");
-    expect(codex).not.toHaveProperty("model");
-    expect(codex).not.toHaveProperty("modeId");
-    expect(codex).not.toHaveProperty("thinkingOptionId");
-    expect(codex.cwd).toBe("/bots/b");
+  it("uses only the bot's settings, whatever the chat asked for", () => {
+    const own = { type: "http" as const, url: "https://own", headers: {} };
+    const chat = { ...base, provider: "codex", model: "picked", modeId: "plan", thinkingOptionId: "high", mcpServers: { own }, toolPolicy: { preapproved: [{ kind: "mcp" as const, server: "own", tool: "x" }] } };
+    const config = applyBotConfig(chat, bot(), EMPTY_LIBRARY, "PROMPT");
+    // The bot's provider; settings it leaves on Default are the provider's default, not the chat's pick.
+    expect(config).toEqual({ ...base, provider: "claude", systemPrompt: "PROMPT" });
+    expect(applyBotConfig(chat, bot({ model: "opus", modeId: "default", thinkingOptionId: "low" }), EMPTY_LIBRARY, "")).toMatchObject({ model: "opus", modeId: "default", thinkingOptionId: "low" });
   });
 
-  it("adds the bot's library servers that are switched on to the chat's own", () => {
+  it("gives the chat only the bot's library servers that are switched on", () => {
     const library: Library = { skills: [], mcpServers: [server("a", "fetch"), server("b", "off", { enabled: false }), server("c", "unused")] };
     const own = { type: "http" as const, url: "https://own", headers: {} };
     const config = applyBotConfig({ ...base, mcpServers: { own } }, bot({ mcpServerIds: ["a", "b", "missing"] }), library, "");
-    expect(Object.keys(config.mcpServers ?? {})).toEqual(["own", "fetch"]);
+    expect(Object.keys(config.mcpServers ?? {})).toEqual(["fetch"]);
     expect(config.mcpServers?.fetch).toEqual({ type: "stdio", command: "uvx", args: ["fetch"], env: {} });
   });
 
