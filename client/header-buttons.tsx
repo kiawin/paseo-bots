@@ -7,7 +7,7 @@ import { Avatar } from "./Avatar";
  * opens the bot's panel. Header buttons belong to one workspace each, so the
  * set follows the bots' workspaces as they appear, get renamed or go away.
  */
-export function installBotHeaderButtons(client: PluginClientContext, open: (workspaceId: string) => void): () => void {
+export function installBotHeaderButtons(client: PluginClientContext, open: (workspaceId: string) => void): { refresh(): void; remove(): void } {
   const buttons = new Map<string, { registration: PluginButtonRegistration; name: string; avatar: string }>();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -26,7 +26,8 @@ export function installBotHeaderButtons(client: PluginClientContext, open: (work
         buttons.set(workspaceId, { ...existing, name, avatar: avatarKey });
         continue;
       }
-      const registration = client.addHeaderButton({ id: `bot-${workspaceId}`, workspaceId, button: { ...look, behavior: { kind: "action", onPress: () => open(workspaceId) } } });
+      // Button ids are per workspace and allow only [a-z0-9-], so every bot workspace uses "bot".
+      const registration = client.addHeaderButton({ id: "bot", workspaceId, button: { ...look, behavior: { kind: "action", onPress: () => open(workspaceId) } } });
       buttons.set(workspaceId, { registration, name, avatar: avatarKey });
     }
     for (const [workspaceId, button] of buttons) {
@@ -35,22 +36,37 @@ export function installBotHeaderButtons(client: PluginClientContext, open: (work
       buttons.delete(workspaceId);
     }
   };
+  const run = () => void sync().catch((error: unknown) => console.error("paseo-bots: couldn't update the bots' header buttons", error));
   const later = () => {
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      void sync().catch(() => undefined);
+      run();
     }, 500);
   };
 
-  void sync().catch(() => undefined);
+  run();
   // A bot's workspace is created, renamed (with the bot) or archived.
   const unsubscribe = client.paseo.workspaces.subscribe(later);
-  return () => {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    unsubscribe();
-    for (const button of buttons.values()) button.registration.remove();
-    buttons.clear();
+  // The daemon only streams workspace updates to clients that subscribed through a list request.
+  let subscription: { release(): Promise<void> } | null = null;
+  void client.paseo.workspaces
+    .list({ subscribe: {} })
+    .then((result) => {
+      if (stopped) void result.subscription.release();
+      else subscription = result.subscription;
+    })
+    .catch(() => undefined);
+  return {
+    /** Picks up a bot workspace made just now, e.g. by opening the bot. */
+    refresh: run,
+    remove() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+      void subscription?.release();
+      for (const button of buttons.values()) button.registration.remove();
+      buttons.clear();
+    },
   };
 }

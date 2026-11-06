@@ -20,10 +20,15 @@ export default function contribute(client: PluginClientContext) {
   void client.rpc(helloRpc, {}).catch(() => {});
   const removeTooltips = installTooltips();
   // A bot opens in its own workspace with its panel in the explorer column; an open panel is focused, not doubled.
-  const openBotPanel = (workspaceId: string) => client.openPanel(BOT_PANEL_ID, { workspaceId, location: "explorer" });
+  const showPanel = (workspaceId: string) => client.openPanel(BOT_PANEL_ID, { workspaceId, location: "explorer" });
   client.addWorkspacePanel({ id: BOT_PANEL_ID, title: "Bot", icon: "Bot", locations: ["explorer", "workspace"], Component: BotWorkspacePanel });
-  const removeHeaderButtons = installBotHeaderButtons(client, openBotPanel);
-  client.addSurface("bots", (props) => <BotsSurface {...props} openBotPanel={openBotPanel} />);
+  const headerButtons = installBotHeaderButtons(client, showPanel);
+  // Opening a bot may have just made its workspace, which then gets its header button.
+  const openBotPanel = (workspaceId: string) => {
+    showPanel(workspaceId);
+    headerButtons.refresh();
+  };
+  client.addScreen({ id: "bots", title: "Bots", Component: (props) => <BotsSurface {...props} openBotPanel={openBotPanel} /> });
   const openBot = async (botId: string) => openBotPanel((await client.rpc(botWorkspaceRpc, { botId })).workspaceId);
   client.addSidebarHeaderItem({ id: "bots", title: "Bots", Component: (props) => <SidebarSection {...props} openBot={openBot} /> });
   client.addSettingsScreen({ id: "bots", title: "Bots", icon: "Bot", Component: BotsSettings });
@@ -33,8 +38,8 @@ export default function contribute(client: PluginClientContext) {
     icon: "Bot",
     keywords: ["bot", "assistant", "persona"],
     context: "global",
-    onSelect({ openSurface }) {
-      openSurface("bots");
+    onSelect({ openScreen }) {
+      openScreen({ screenId: "bots" });
     },
   });
   client.addCommandCenterItem({
@@ -43,9 +48,9 @@ export default function contribute(client: PluginClientContext) {
     icon: "Plus",
     keywords: ["bot", "create", "assistant"],
     context: "global",
-    onSelect({ openSurface }) {
+    onSelect({ openScreen }) {
       requestIntent({ kind: "new-bot" });
-      openSurface("bots");
+      openScreen({ screenId: "bots" });
     },
   });
   // Bot chats opened in Paseo's own agent view get the same /learn and skill cards.
@@ -92,7 +97,7 @@ export default function contribute(client: PluginClientContext) {
     Component: ({ item, theme }) => <RoutineRunCard colors={theme.colors} card={item.data} />,
   });
   return () => {
-    removeHeaderButtons();
+    headerButtons.remove();
     removeTooltips();
   };
 }
