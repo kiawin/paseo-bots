@@ -4,6 +4,7 @@ import { checkAppCall, type AppLimit } from "../shared/apps";
 import type { Bot, McpServerConfig } from "../shared/bot";
 import { accounts, appTools, connectedSlugs, deadline, readState, session, writeState } from "./composio";
 import type { BotsHost } from "./host";
+import { ChatKeys } from "./chat-keys";
 import { answerMcp, type BotTool } from "./tools/mcp";
 
 // Bots reach the plugin through this loopback relay, the way Paseo gives agents
@@ -12,7 +13,8 @@ import { answerMcp, type BotTool } from "./tools/mcp";
 //
 //   /mcp/<botId>              connected apps: forwards to Composio with the key
 //                             added, after checking the bot may use the app
-//   /bots/<botId>/<agentId>   the plugin's own tools for one chat
+//   /bots/<botId>/<chatKey>   the plugin's own tools for one chat (ChatKeys
+//                             says which; older chats use their agent id)
 
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_RESPONSE = 20 * 1024 * 1024;
@@ -27,8 +29,8 @@ function botToken(secret: string, botId: string): string {
   return sign(secret, botId);
 }
 
-function toolsToken(secret: string, botId: string, agentId: string): string {
-  return sign(secret, `tools:${botId}:${agentId}`);
+function toolsToken(secret: string, botId: string, chatKey: string): string {
+  return sign(secret, `tools:${botId}:${chatKey}`);
 }
 
 function tokenMatches(expected: string, header: string | undefined): boolean {
@@ -78,6 +80,7 @@ export class Relay {
   private server: Server | null = null;
   private listening: Promise<number> | null = null;
   private readonly routes: RelayRoute[] = [];
+  readonly chats = new ChatKeys();
 
   constructor(
     private readonly host: BotsHost,
@@ -128,11 +131,11 @@ export class Relay {
     return { type: "http", url: `http://127.0.0.1:${port}/mcp/${botId}`, headers: { Authorization: `Bearer ${botToken(state.secret, botId)}` } };
   }
 
-  /** The plugin's tools for one chat. */
-  async mountTools(botId: string, agentId: string): Promise<McpServerConfig> {
+  /** The plugin's tools for one chat, by its key (ChatKeys). */
+  async mountTools(botId: string, chatKey: string): Promise<McpServerConfig> {
     const state = await readState();
     const port = await this.start();
-    return { type: "http", url: `http://127.0.0.1:${port}/bots/${botId}/${agentId}`, headers: { Authorization: `Bearer ${toolsToken(state.secret, botId, agentId)}` } };
+    return { type: "http", url: `http://127.0.0.1:${port}/bots/${botId}/${chatKey}`, headers: { Authorization: `Bearer ${toolsToken(state.secret, botId, chatKey)}` } };
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse) {
@@ -167,9 +170,9 @@ export class Relay {
     }
   }
 
-  private async handleTools(request: IncomingMessage, response: ServerResponse, botId: string, agentId: string) {
+  private async handleTools(request: IncomingMessage, response: ServerResponse, botId: string, chatKey: string) {
     const state = await readState();
-    if (!ID.test(botId) || !ID.test(agentId) || !tokenMatches(toolsToken(state.secret, botId, agentId), request.headers.authorization)) {
+    if (!ID.test(botId) || !ID.test(chatKey) || !tokenMatches(toolsToken(state.secret, botId, chatKey), request.headers.authorization)) {
       return json(response, 401, { error: "unauthorized" });
     }
     if (this.refuseNonPost(request, response)) return;
@@ -178,7 +181,7 @@ export class Relay {
     const bot = await this.host.bot(botId);
     const id = (parsed.message.id as string | number | undefined) ?? null;
     if (!bot || bot.archived) return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "This bot no longer exists." } });
-    const answer = await answerMcp(parsed.message, this.tools, { bot, agentId, host: this.host, relay: this });
+    const answer = await answerMcp(parsed.message, this.tools, { bot, agentId: await this.chats.agentOf(chatKey), host: this.host });
     if (!answer) return response.writeHead(202).end();
     json(response, 200, answer);
   }
@@ -193,7 +196,7 @@ export class Relay {
     if (!parsed) return;
     const bot = await this.host.bot(botId);
     const id = (parsed.message.id as string | number | undefined) ?? null;
-    if (!bot || bot.archived || bot.hostId || bot.apps.length === 0) {
+    if (!bot || bot.archived || bot.apps.length === 0) {
       return json(response, 403, { jsonrpc: "2.0", id, error: { code: -32001, message: "Connected apps are off for this bot. Turn them on under its Access settings in Paseo." } });
     }
     // Limits need Composio's tool lists, so they're looked up for tool calls only.

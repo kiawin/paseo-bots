@@ -25,8 +25,6 @@ export interface Selection {
   botId: string;
   /** Null is a new, not yet started chat. */
   chatId: string | null;
-  /** First message to send straight away when starting a new chat. */
-  prompt?: string;
 }
 
 export type MenuSource = "kebab" | "context";
@@ -273,7 +271,7 @@ function PinnedSection(props: PinnedProps) {
 }
 
 function PinnedChatRow({ colors, tokens, bot, chatId, selection, localHost, touch, onSelect, onChatMenu }: PinnedProps & { bot: Bot; chatId: string }) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const chat = chats.data?.find((entry) => entry.id === chatId);
   if (!chat) return null;
@@ -298,7 +296,7 @@ type GroupProps = BotSidebarProps & { bot: Bot; tokens: NativeTokens; pinnedIds:
 
 function BotGroup(props: GroupProps) {
   const { colors, tokens, bot, selection, ui: listUi, localHost, touch, pinnedIds, onSelect, onChatMenu } = props;
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const [expanded, setExpanded] = useState(false);
   const isOpen = !listUi.collapsed.includes(bot.id);
@@ -344,13 +342,13 @@ function BotGroup(props: GroupProps) {
 
   return (
     <View role="group" accessibilityLabel={bot.name} style={{ paddingBottom: children ? 12 : 0 }}>
-      <BotRow {...props} isOpen={isOpen} aggregate={aggregate} hostLabel={host.online ? null : host.label} />
+      <BotRow {...props} isOpen={isOpen} aggregate={aggregate} />
       {children}
     </View>
   );
 }
 
-function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel, onToggle, onSelect, onBotMenu }: GroupProps & { isOpen: boolean; aggregate: ChatBucket | null; hostLabel: string | null }) {
+function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, onToggle, onSelect, onBotMenu }: GroupProps & { isOpen: boolean; aggregate: ChatBucket | null }) {
   const [hovered, setHovered] = useState(false);
   const kebabRef = useRef<View>(null);
   const plus = useHover();
@@ -400,7 +398,6 @@ function BotRow({ colors, tokens, bot, lead, touch, isOpen, aggregate, hostLabel
         </View>
         <Text numberOfLines={1} style={{ minWidth: 0, flexShrink: 1, fontSize: ui(14), color: colors.foregroundMuted, opacity: bot.archived ? 0.6 : 1 }}>
           {bot.name}
-          {hostLabel ? ` · ${hostLabel} offline` : ""}
         </Text>
         {lead ? <Icon name="Crown" size={12} color={colors.foregroundMuted} /> : null}
       </View>

@@ -1,11 +1,12 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { memo, useMemo, type ReactNode } from "react";
-import { Text, View, type TextStyle, type ViewStyle } from "react-native";
-import { buildLineDiff, parseUnifiedDiff, hasMeaningfulToolCallDetail, type DiffLine, type ToolCallDetail } from "../../../shared/tools";
-import { MONO_FONT, MONO_PROPS, nativeTokens } from "../../native";
-import { code, ui } from "../../typography";
-import { isWeb } from "./ui";
+import { Platform, Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { buildLineDiff, parseUnifiedDiff, hasMeaningfulToolCallDetail, type DiffLine, type ToolCallDetail } from "../../shared/tools";
+import { MONO_FONT, MONO_PROPS, nativeTokens } from "../native";
+import { code, ui } from "../typography";
+const isWeb = Platform.OS === "web";
+
 
 type Colors = PluginTheme["colors"];
 
