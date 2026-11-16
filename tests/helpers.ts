@@ -14,6 +14,7 @@ export function makeBot(patch: Partial<Bot> = {}): Bot {
     model: null,
     modeId: null,
     autoAccept: false,
+    claudeAiConnectors: false,
     thinkingOptionId: null,
     soul: "",
     mcpServerIds: [],

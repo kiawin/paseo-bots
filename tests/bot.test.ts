@@ -15,6 +15,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     model: null,
     modeId: null,
     autoAccept: false,
+    claudeAiConnectors: false,
     thinkingOptionId: null,
     soul: "Be brief.",
     mcpServerIds: [],
@@ -97,6 +98,11 @@ describe("applyBotConfig", () => {
     expect(parentClaudeMdFiles("/home/me/.config/paseo/bots/scout")).toContain("/CLAUDE.md");
     expect(parentClaudeMdFiles("/home/me/.config/paseo/bots/scout").some((file) => file.startsWith("/home/me/.config/paseo/bots/scout/"))).toBe(false);
     expect(JSON.parse(claudeBotArgs("/bots/b").settings!)).toEqual({ autoMemoryEnabled: false, claudeMdExcludes: parentClaudeMdFiles("/bots/b") });
+    // The claude.ai connectors come back only when the bot asks for them.
+    expect(claudeBotArgs("/bots/b")).toHaveProperty("strict-mcp-config", null);
+    expect(claudeBotArgs("/bots/b", true)).not.toHaveProperty("strict-mcp-config");
+    expect(claudeBotArgs("/bots/b", true)["setting-sources"]).toBe("project,local");
+    expect(applyBotConfig(base, bot({ claudeAiConnectors: true }), EMPTY_LIBRARY, "").providerOptions).toEqual({ extraArgs: claudeBotArgs("/bots/b", true) });
     // The bot's MEMORY.md is its only memory, wherever it runs.
     expect(JSON.parse(claudeBotArgs(undefined).settings!)).toEqual({ autoMemoryEnabled: false });
     expect(applyBotConfig({ ...base, provider: "claude" }, bot({ provider: "codex" }), EMPTY_LIBRARY, "")).not.toHaveProperty("providerOptions");

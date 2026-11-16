@@ -151,6 +151,8 @@ export const BotSchema = z.object({
   modeId: z.string().nullable().default(null),
   /** Paseo's "Auto Accept" for ACP providers (Cursor and the like): it answers every permission prompt itself. */
   autoAccept: z.boolean().default(false),
+  /** Claude Code only: also load the claude.ai connectors (Drive, Gmail...) the user has connected. Off keeps the bot to its own MCP servers. */
+  claudeAiConnectors: z.boolean().default(false),
   thinkingOptionId: z.string().nullable().default(null),
   /** Standing instructions, placed right after the persona in the system prompt. */
   soul: z.string().default(""),
@@ -606,15 +608,18 @@ export function parentClaudeMdFiles(folder: string): string[] {
  * plugins and permissions. No CLAUDE.md from the user or from any folder
  * above the bot's. No auto-memory of Claude Code's own, so the bot's MEMORY.md
  * is its only memory. Only the MCP servers Paseo passes in, so none of the
- * user's or a project's .mcp.json servers. The login and session files stay where
+ * user's or a project's .mcp.json servers, and none of the claude.ai
+ * connectors. With `connectors` the flag is left off: the connectors load from
+ * the user's account, while the user's and plugins' own servers stay out
+ * because the user settings are skipped. The login and session files stay where
  * they are. The bot's own folder still counts as the project, so a CLAUDE.md
  * or .claude/settings.json there applies. Paseo hands extraArgs to the CLI
  * after its own flags, and the last --setting-sources wins.
  */
-export function claudeBotArgs(folder: string | undefined): Record<string, string | null> {
+export function claudeBotArgs(folder: string | undefined, connectors = false): Record<string, string | null> {
   return {
     "setting-sources": "project,local",
-    "strict-mcp-config": null,
+    ...(connectors ? {} : { "strict-mcp-config": null }),
     settings: JSON.stringify({ autoMemoryEnabled: false, ...(folder ? { claudeMdExcludes: parentClaudeMdFiles(folder) } : {}) }),
   };
 }
@@ -668,7 +673,7 @@ export function applyBotConfig<Config extends BotSessionConfig>(
   if (provider === "claude") {
     const options = config.providerOptions ?? {};
     const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
-    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd) } };
+    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd, bot.claudeAiConnectors) } };
   }
   if (provider === "codex" && codexFeatures) {
     const options = config.providerOptions ?? {};
