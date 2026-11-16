@@ -95,14 +95,14 @@ export function LibraryPicker({ colors, bot, library, onLibrary, onPatch, kind, 
         ))}
       </SettingsCard>
     </SettingsSection>
-      {kind === "mcp" && bot.provider === "claude" ? (
-        <SettingsSection title="claude.ai connectors" info="Claude Code loads the connectors you've connected on claude.ai (Drive, Gmail, Slack...) from your account, so the bot can read and act on them. It applies to new chats; one already open keeps what it had.">
+      {kind === "mcp" && (bot.provider === "claude" || bot.provider === "codex") ? (
+        <SettingsSection title={bot.provider === "claude" ? "claude.ai connectors" : "ChatGPT apps"} info={`${bot.provider === "claude" ? "Claude Code loads the connectors you've connected on claude.ai" : "Codex loads the apps connected to your ChatGPT account"} (Drive, Gmail, GitHub...) from your account, so the bot can read and act on them. It applies to new chats; one already open keeps what it had.`}>
           <SettingsCard>
-            <PressableRow colors={colors} accessibilityLabel="Use claude.ai connectors" onPress={() => onPatch({ claudeAiConnectors: !bot.claudeAiConnectors })}>
+            <PressableRow colors={colors} accessibilityLabel="Use account connectors" onPress={() => onPatch({ connectors: !bot.connectors })}>
               {() => (
                 <>
-                  <RowText colors={colors} label="Use my claude.ai connectors" hint="Every connector on your account, not one by one" hintLines={2} />
-                  <Switch colors={colors} label="Use claude.ai connectors" value={bot.claudeAiConnectors} onValueChange={(on) => onPatch({ claudeAiConnectors: on })} />
+                  <RowText colors={colors} label={bot.provider === "claude" ? "Use my claude.ai connectors" : "Use my ChatGPT apps"} hint="Every one on your account, not one by one" hintLines={2} />
+                  <Switch colors={colors} label="Use account connectors" value={bot.connectors} onValueChange={(on) => onPatch({ connectors: on })} />
                 </>
               )}
             </PressableRow>

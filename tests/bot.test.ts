@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pixelAvatar, SPRITE_NAMES, SPRITE_SIZE } from "../shared/avatar";
-import { applyBotConfig, botProblems, botSettings, claudeBotArgs, parentClaudeMdFiles, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
+import { applyBotConfig, botProblems, botSettings, claudeBotArgs, CODEX_BOT_FEATURES, parentClaudeMdFiles, defaultModelId, EMPTY_LIBRARY, migrateV2, promptSections, formatPairs, joinArgs, parseMcpJson, parsePairs, splitArgs, type Bot, type Library, type LibraryMcpServer } from "../shared/bot";
 import { BOT_TEMPLATES } from "../shared/templates";
 import { relativeTime } from "../shared/time";
 
@@ -15,7 +15,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     model: null,
     modeId: null,
     autoAccept: false,
-    claudeAiConnectors: false,
+    connectors: false,
     thinkingOptionId: null,
     soul: "Be brief.",
     mcpServerIds: [],
@@ -102,7 +102,11 @@ describe("applyBotConfig", () => {
     expect(claudeBotArgs("/bots/b")).toHaveProperty("strict-mcp-config", null);
     expect(claudeBotArgs("/bots/b", true)).not.toHaveProperty("strict-mcp-config");
     expect(claudeBotArgs("/bots/b", true)["setting-sources"]).toBe("project,local");
-    expect(applyBotConfig(base, bot({ claudeAiConnectors: true }), EMPTY_LIBRARY, "").providerOptions).toEqual({ extraArgs: claudeBotArgs("/bots/b", true) });
+    expect(applyBotConfig(base, bot({ connectors: true }), EMPTY_LIBRARY, "").providerOptions).toEqual({ extraArgs: claudeBotArgs("/bots/b", true) });
+    // Codex's ChatGPT apps come back the same way.
+    const codex = { provider: "codex", cwd: "/bots/b" };
+    expect(applyBotConfig(codex, bot({ provider: "codex", connectors: true }), EMPTY_LIBRARY, "", {}, { codexFeatures: true }).providerOptions).toEqual({ features: { ...CODEX_BOT_FEATURES, apps: true } });
+    expect(applyBotConfig(codex, bot({ provider: "codex" }), EMPTY_LIBRARY, "", {}, { codexFeatures: true }).providerOptions).toEqual({ features: CODEX_BOT_FEATURES });
     // The bot's MEMORY.md is its only memory, wherever it runs.
     expect(JSON.parse(claudeBotArgs(undefined).settings!)).toEqual({ autoMemoryEnabled: false });
     expect(applyBotConfig({ ...base, provider: "claude" }, bot({ provider: "codex" }), EMPTY_LIBRARY, "")).not.toHaveProperty("providerOptions");
