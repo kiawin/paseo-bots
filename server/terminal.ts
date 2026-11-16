@@ -1,4 +1,4 @@
-import { applyBotConfig, claudeBotArgs, type BotSessionConfig, type McpServerConfig } from "../shared/bot";
+import { applyBotConfig, type BotSessionConfig, type McpServerConfig } from "../shared/bot";
 import { botIdAt } from "./bot-home";
 import type { BotsHost } from "./host";
 import { systemPrompt } from "./prompt";
@@ -68,7 +68,8 @@ export function claudeCliArgs(config: BotSessionConfig): string[] {
   args.push("--mcp-config", JSON.stringify({ mcpServers: config.mcpServers ?? {} }));
   const allowed = grants(config).map((grant) => `mcp__${grant.server}__${grant.tool}`);
   if (allowed.length) args.push("--allowedTools", allowed.join(","));
-  for (const [flag, value] of Object.entries(claudeBotArgs(config.cwd))) args.push(`--${flag}`, ...(value === null ? [] : [value]));
+  const extraArgs = (config.providerOptions?.extraArgs ?? {}) as Record<string, string | null>;
+  for (const [flag, value] of Object.entries(extraArgs)) args.push(`--${flag}`, ...(value === null ? [] : [value]));
   return args;
 }
 
