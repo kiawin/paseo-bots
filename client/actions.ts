@@ -18,7 +18,7 @@ export function useStartSetup(navigation: PluginSurfaceProps["navigation"], flus
     try {
       await flush();
       const home = await ensureHome({ botId: bot.id });
-      const agentId = await startBotChat(paseo, { bot, home: home.path, prompt: SETUP_PROMPT });
+      const agentId = await startBotChat(paseo, { bot, home: home.path, prompt: SETUP_PROMPT, title: "Setup" });
       navigation?.openAgent({ agentId });
     } catch (error) {
       toast.error(`Couldn't start the setup chat: ${errorText(error)}`);
