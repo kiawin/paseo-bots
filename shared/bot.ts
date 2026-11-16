@@ -151,8 +151,8 @@ export const BotSchema = z.object({
   modeId: z.string().nullable().default(null),
   /** Paseo's "Auto Accept" for ACP providers (Cursor and the like): it answers every permission prompt itself. */
   autoAccept: z.boolean().default(false),
-  /** Claude Code only: also load the claude.ai connectors (Drive, Gmail...) the user has connected. Off keeps the bot to its own MCP servers. */
-  claudeAiConnectors: z.boolean().default(false),
+  /** Claude and Codex: also load the connectors on the user's account (claude.ai's, or Codex's ChatGPT apps: Drive, Gmail...). Off keeps the bot to its own MCP servers. */
+  connectors: z.boolean().default(false),
   thinkingOptionId: z.string().nullable().default(null),
   /** Standing instructions, placed right after the persona in the system prompt. */
   soul: z.string().default(""),
@@ -626,7 +626,8 @@ export function claudeBotArgs(folder: string | undefined, connectors = false): R
 
 /**
  * Codex features that bring the user's own Codex setup into a chat: plugins
- * (with their MCP servers and skills), hooks, memories and ChatGPT apps. Codex
+ * (with their MCP servers and skills), hooks, memories and ChatGPT apps (a bot's
+ * `connectors` switch turns the apps back on). Codex
  * merges these with the user's [features], so the rest keep their values.
  */
 export const CODEX_BOT_FEATURES: Readonly<Record<string, boolean>> = { plugins: false, hooks: false, memories: false, apps: false };
@@ -673,11 +674,11 @@ export function applyBotConfig<Config extends BotSessionConfig>(
   if (provider === "claude") {
     const options = config.providerOptions ?? {};
     const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
-    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd, bot.claudeAiConnectors) } };
+    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd, bot.connectors) } };
   }
   if (provider === "codex" && codexFeatures) {
     const options = config.providerOptions ?? {};
-    next.providerOptions = { ...options, features: { ...((options.features ?? {}) as Record<string, unknown>), ...CODEX_BOT_FEATURES } };
+    next.providerOptions = { ...options, features: { ...((options.features ?? {}) as Record<string, unknown>), ...CODEX_BOT_FEATURES, apps: bot.connectors } };
   }
   if (supportsAutoAccept(provider)) {
     const { auto_accept: _, ...options } = config.providerOptions ?? {};

@@ -178,7 +178,7 @@ export async function importBot({ botId, json }: { botId: string; json: string }
     contactBots: "ask",
     // A shared bot never starts out approving everything.
     autoAccept: false,
-    claudeAiConnectors: false,
+    connectors: false,
     routines: parsed.bot.routines.map((routine) => ({ ...routine, id: newRoutineId(), enabled: false, resultsChatId: null, createdAt: now })),
     pinned: false,
     archived: false,
