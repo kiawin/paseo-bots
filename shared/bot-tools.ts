@@ -29,6 +29,11 @@ export function supportsToolGrants(provider: string): boolean {
   return /^(claude|codex|opencode)(\b|$)/.test(provider);
 }
 
+/** Providers Paseo runs over ACP (Cursor and the like), which have its "Auto Accept" option. The others have their own approval modes. */
+export function supportsAutoAccept(provider: string): boolean {
+  return !!provider && !/^(claude|codex|opencode|pi|omp)(\b|$)/.test(provider);
+}
+
 /** The prompt section for the plugin's own tools, given to chats that get them (bots on the plugin's host). */
 export function botToolsPrompt(canAsk: boolean): string {
   const others = canAsk ? "list_bots to see the other bots and ask_bot to ask one for help (check_chat follows up)" : "list_bots to see the other bots";

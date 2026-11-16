@@ -13,6 +13,7 @@ export function makeBot(patch: Partial<Bot> = {}): Bot {
     provider: "claude",
     model: null,
     modeId: null,
+    autoAccept: false,
     thinkingOptionId: null,
     soul: "",
     mcpServerIds: [],
