@@ -1,7 +1,7 @@
 import { defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
-import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
+import { botToolsPrompt, QUIET_TOOLS, supportsAutoAccept, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 
 /** Agent label carrying the bot id, set on chats the plugin starts. A chat's folder says whose it is; the label covers chats from before bots had their own folders. */
@@ -149,6 +149,8 @@ export const BotSchema = z.object({
   model: z.string().nullable().default(null),
   /** Paseo mode: the provider's approval level. */
   modeId: z.string().nullable().default(null),
+  /** Paseo's "Auto Accept" for ACP providers (Cursor and the like): it answers every permission prompt itself. */
+  autoAccept: z.boolean().default(false),
   thinkingOptionId: z.string().nullable().default(null),
   /** Standing instructions, placed right after the persona in the system prompt. */
   soul: z.string().default(""),
@@ -512,7 +514,7 @@ export function composeSystemPrompt(bot: Bot, context: PromptContext): string {
 export function botLimits(bot: Bot, facts: { appsConfigured: boolean }): string[] {
   const lines: string[] = [];
   // Modes that skip approvals: Claude's bypassPermissions, Codex's full-access and the like.
-  if (!/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
+  if (!bot.autoAccept && !/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
   if (bot.contactBots === "off") lines.push("Can't contact other bots.");
   else if (bot.contactBots === "ask") lines.push("Asks before contacting other bots.");
   if (!facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
@@ -671,6 +673,11 @@ export function applyBotConfig<Config extends BotSessionConfig>(
   if (provider === "codex" && codexFeatures) {
     const options = config.providerOptions ?? {};
     next.providerOptions = { ...options, features: { ...((options.features ?? {}) as Record<string, unknown>), ...CODEX_BOT_FEATURES } };
+  }
+  if (supportsAutoAccept(provider)) {
+    const { auto_accept: _, ...options } = config.providerOptions ?? {};
+    next.providerOptions = bot.autoAccept ? { ...options, auto_accept: true } : options;
+    if (Object.keys(next.providerOptions).length === 0) delete next.providerOptions;
   }
   if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
   else delete next.mcpServers;

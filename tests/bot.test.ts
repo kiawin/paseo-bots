@@ -14,6 +14,7 @@ function bot(patch: Partial<Bot> = {}): Bot {
     provider: "claude",
     model: null,
     modeId: null,
+    autoAccept: false,
     thinkingOptionId: null,
     soul: "Be brief.",
     mcpServerIds: [],
@@ -64,6 +65,15 @@ function server(id: string, name: string, patch: Partial<LibraryMcpServer> = {})
 
 describe("applyBotConfig", () => {
   const base = { provider: "claude", cwd: "/bots/b" };
+
+  it("turns on Paseo's Auto Accept for an ACP provider, and only then", () => {
+    const cursor = { provider: "cursor", cwd: "/bots/b" };
+    const on = applyBotConfig({ ...cursor, providerOptions: { fast: "on" } }, bot({ provider: "cursor", autoAccept: true }), EMPTY_LIBRARY, "");
+    expect(on.providerOptions).toEqual({ fast: "on", auto_accept: true });
+    const off = applyBotConfig({ ...cursor, providerOptions: { auto_accept: true } }, bot({ provider: "cursor" }), EMPTY_LIBRARY, "");
+    expect(off.providerOptions).toBeUndefined();
+    expect(applyBotConfig(base, bot({ autoAccept: true }), EMPTY_LIBRARY, "").providerOptions).toEqual({ extraArgs: claudeBotArgs("/bots/b") });
+  });
 
   it("applies the bot's model, mode and prompt, and leaves out empty extras", () => {
     const config = applyBotConfig({ ...base, model: "picked" }, bot({ model: "claude-opus-5-5", modeId: "default" }), EMPTY_LIBRARY, "PROMPT");

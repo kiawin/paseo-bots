@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
-import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
+import { supportsAutoAccept, TOOLS_MCP_NAME } from "../../shared/bot-tools";
 import { commandListRpc, commandRemoveRpc } from "../../shared/rpc";
 import { useAgentProfiles, useBotHost, usePaseoTools, useProviders } from "../data";
 import { errorText } from "../native";
@@ -196,6 +196,18 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
             options={provider ? [{ label: "Default", value: "" }, ...modes.map((mode) => ({ label: mode.label, value: mode.id }))] : []}
             onValueChange={(value) => onPatch({ modeId: value || null })}
           />
+          {supportsAutoAccept(bot.provider) ? (
+            <SettingsSelect
+              label="Auto accept"
+              hint="Approves every permission prompt without asking you, whatever the mode. Skips Cursor's own review."
+              value={bot.autoAccept ? "on" : "off"}
+              options={[
+                { label: "Off", value: "off" },
+                { label: "On", value: "on" },
+              ]}
+              onValueChange={(value) => onPatch({ autoAccept: value === "on" })}
+            />
+          ) : null}
         </SettingsCard>
       </SettingsSection>
       <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">

@@ -70,6 +70,7 @@ export function newBot(provider: string, template?: BotTemplate): Bot {
     provider,
     model: null,
     modeId: null,
+    autoAccept: false,
     thinkingOptionId: null,
     soul: template?.soul ?? "",
     mcpServerIds: [],
