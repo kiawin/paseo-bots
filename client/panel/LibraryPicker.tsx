@@ -23,6 +23,8 @@ interface LibraryPickerProps extends Pick<PanelProps, "colors" | "bot" | "librar
  * Skills & Tools page; a row opens its page there.
  */
 export function LibraryPicker({ colors, bot, library, onLibrary, onPatch, kind, title, info }: LibraryPickerProps) {
+  const found = useFoundServers(kind === "mcp");
+  const fromComputer = new Set(found.map((entry) => entry.key));
   const items =
     kind === "skill"
       ? library.skills.map((skill) => ({
@@ -32,7 +34,7 @@ export function LibraryPicker({ colors, bot, library, onLibrary, onPatch, kind, 
           enabled: skill.enabled && skill.reviewedSha !== null,
           offHint: skill.reviewedSha === null ? "Needs review in Skills & Tools" : "Turned off in Skills & Tools",
         }))
-      : library.mcpServers.map((server) => ({
+      : library.mcpServers.filter((server) => !fromComputer.has(server.name)).map((server) => ({
           id: server.id,
           label: server.name,
           hint: server.description || mcpTarget(server.config),
@@ -45,17 +47,16 @@ export function LibraryPicker({ colors, bot, library, onLibrary, onPatch, kind, 
     onPatch(kind === "skill" ? { skillIds: next.skillIds } : { mcpServerIds: next.mcpServerIds });
   };
   const noun = kind === "skill" ? "skills" : "MCP servers";
-  const found = useFoundServers(kind === "mcp" ? library : null);
   const probe = useRpc(mcpProbeRpc);
   const toast = useToast();
   const [adding, setAdding] = useState<string | null>(null);
 
-  /** Adds a server found on this computer to the library, tests it, and on success turns it on here. */
+  /** Adds a server found on this computer to the library (once), tests it, and on success turns it on here. */
   const adopt = async (entry: FoundServer) => {
     setAdding(entry.key);
     try {
-      let id = "";
-      if (!(await onLibrary((current) => {
+      let id = library.mcpServers.find((server) => server.name === entry.key)?.id ?? "";
+      if (!id && !(await onLibrary((current) => {
         const added = addMcpServers(current, [entry.server]);
         id = added.ids[0] ?? "";
         return added.library;
@@ -95,18 +96,23 @@ export function LibraryPicker({ colors, bot, library, onLibrary, onPatch, kind, 
       </SettingsCard>
     </SettingsSection>
       {found.length > 0 ? (
-        <SettingsSection title="On this computer" info="Servers Claude Code, Claude Desktop, Cursor and Codex have set up here. Switching one on adds it to Skills & Tools and tests it first; sign-in tokens stay with those apps, so a server that needs sign-in may not connect.">
+        <SettingsSection title="On this computer" info="Servers Claude Code, Claude Desktop, Cursor and Codex have set up here. Switching one on adds it to Skills & Tools, tests it first, and keeps it here; sign-in tokens stay with those apps, so a server that needs sign-in may not connect.">
           <SettingsCard>
-            {found.map((entry) => (
-              <PressableRow key={entry.key} colors={colors} accessibilityLabel={`Use ${entry.server.name}`} onPress={() => void adopt(entry)}>
-                {() => (
-                  <>
-                    <RowText colors={colors} label={entry.server.name} hint={adding === entry.key ? "Connecting..." : `${entry.labels.join(", ")} · ${mcpTarget(entry.server.config)}`} hintLines={2} />
-                    <Switch colors={colors} label={`Use ${entry.server.name}`} value={adding === entry.key} disabled={adding !== null} onValueChange={() => void adopt(entry)} />
-                  </>
-                )}
-              </PressableRow>
-            ))}
+            {found.map((entry) => {
+              const added = library.mcpServers.find((server) => server.name === entry.key);
+              const ready = added !== undefined && added.enabled;
+              const flip = (on: boolean) => (ready ? toggle(added.id, on) : void adopt(entry));
+              return (
+                <PressableRow key={entry.key} colors={colors} accessibilityLabel={`Use ${entry.server.name}`} onPress={() => flip(!(ready && used.includes(added.id)))}>
+                  {() => (
+                    <>
+                      <RowText colors={colors} label={entry.server.name} hint={adding === entry.key ? "Connecting..." : `${entry.labels.join(", ")} · ${mcpTarget(entry.server.config)}`} hintLines={2} />
+                      <Switch colors={colors} label={`Use ${entry.server.name}`} value={adding === entry.key || (ready && used.includes(added.id))} disabled={adding !== null} onValueChange={flip} />
+                    </>
+                  )}
+                </PressableRow>
+              );
+            })}
           </SettingsCard>
         </SettingsSection>
       ) : null}
@@ -121,12 +127,10 @@ interface FoundServer {
   labels: string[];
 }
 
-/** MCP servers other apps here have that the library doesn't hold yet (same name and connection). Pass null to skip. */
-function useFoundServers(library: Pick<PanelProps["library"], "mcpServers"> | null): FoundServer[] {
+/** MCP servers other apps here have, one per name: the first app's setup, with every app that has it listed. Pass false to skip. */
+function useFoundServers(enabled: boolean): FoundServer[] {
   const readSources = useRpc(mcpSourcesRpc);
-  const sources = useQuery({ queryKey: ["paseo-bots", "mcp-sources"], queryFn: () => readSources({}), enabled: library !== null });
-  if (!library) return [];
-  const known = new Set(library.mcpServers.map((server) => `${server.name}\n${JSON.stringify(server.config)}`));
+  const sources = useQuery({ queryKey: ["paseo-bots", "mcp-sources"], queryFn: () => readSources({}), enabled });
   const found = new Map<string, FoundServer>();
   for (const source of sources.data?.sources ?? []) {
     let servers: BotMcpServer[] = [];
@@ -136,11 +140,9 @@ function useFoundServers(library: Pick<PanelProps["library"], "mcpServers"> | nu
       continue;
     }
     for (const server of servers) {
-      const key = `${server.name}\n${JSON.stringify(server.config)}`;
-      if (known.has(key)) continue;
-      const entry = found.get(key) ?? { key, server, labels: [] };
+      const entry = found.get(server.name) ?? { key: server.name, server, labels: [] };
       entry.labels.push(source.label);
-      found.set(key, entry);
+      found.set(server.name, entry);
     }
   }
   return [...found.values()];
