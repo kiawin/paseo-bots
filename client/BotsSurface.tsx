@@ -513,6 +513,7 @@ function BotsSurfaceContent({ theme, layout, host, navigation, openBotPanel }: B
         localHost={localHost}
         history={settings.values.history}
         library={library}
+        onLibrary={(mutate) => commit((values) => ({ ...values, library: mutate(values.library ?? EMPTY_LIBRARY) }))}
         groups={groups}
         section={panel.section}
         onSection={(section) => setPanel({ open: true, section })}
