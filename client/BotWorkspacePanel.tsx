@@ -34,7 +34,7 @@ function BotWorkspaceContent({ theme, layout, host, navigation, workspaceId }: P
   const { colors } = theme;
   const workspaceBot = useRpc(workspaceBotRpc);
   const owner = useQuery({ queryKey: ["paseo-bots", "workspace-bot", workspaceId], staleTime: 60_000, queryFn: () => workspaceBot({ workspaceId }) });
-  const { settings, drafts, flush, patchBot } = useBotEditor();
+  const { settings, drafts, flush, patchBot, commit } = useBotEditor();
   const startSetup = useStartSetup(navigation, flush);
   const toast = useToast();
   const [section, setSection] = useState<SectionId | null>(null);
@@ -71,6 +71,7 @@ function BotWorkspaceContent({ theme, layout, host, navigation, workspaceId }: P
       onSection={setSection}
       onClose={() => setSection(null)}
       onPatch={(patch) => patchBot(bot.id, patch)}
+      onLibrary={(mutate) => commit((values) => ({ ...values, library: mutate(values.library ?? EMPTY_LIBRARY) }))}
       flush={flush}
       onRestore={(snapshot) => {
         patchBot(bot.id, snapshot);
