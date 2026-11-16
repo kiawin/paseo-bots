@@ -8,7 +8,7 @@ import { dayName, journalSource, journalSummary } from "../../shared/activity";
 import type { Bot } from "../../shared/bot";
 import { memoryJournalRpc, memoryLogDeleteRpc, memoryLogRpc, memoryUndoRpc, type JournalRow } from "../../shared/rpc";
 import { relativeTime } from "../../shared/time";
-import { ToolCallDetailsContent } from "../chat/stream/details";
+import { ToolCallDetailsContent } from "../ui/ToolDetails";
 import { confirmDialog, errorText, MONO_FONT, MONO_PROPS } from "../native";
 import { code, codeLine, ui } from "../typography";
 import type { PanelProps } from "./BotPanel";

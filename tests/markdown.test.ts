@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capMessageForRender, formatDuration, parseInline, parseMarkdown, utf8ByteLength, type Block, type Inline } from "../shared/markdown";
+import { parseInline, parseMarkdown, type Block, type Inline } from "../shared/markdown";
 
 const text = (value: string): Inline => ({ kind: "text", text: value });
 
@@ -139,26 +139,5 @@ describe("parseInline", () => {
 
   it("parses images", () => {
     expect(parseInline("![alt text](https://x/y.png)")).toEqual([{ kind: "image", url: "https://x/y.png", alt: "alt text" }]);
-  });
-});
-
-describe("render limits", () => {
-  it("caps long messages", () => {
-    const long = "a".repeat(40_000);
-    expect(capMessageForRender(long)).toEqual({ text: "a".repeat(32_000), capped: true });
-    expect(capMessageForRender("short")).toEqual({ text: "short", capped: false });
-    expect(utf8ByteLength("aé€😀")).toBe(1 + 2 + 3 + 4);
-  });
-});
-
-describe("formatDuration", () => {
-  it("floors like Paseo", () => {
-    expect(formatDuration(400)).toBe("0s");
-    expect(formatDuration(24_900)).toBe("24s");
-    expect(formatDuration(95_000)).toBe("1m 35s");
-    expect(formatDuration(120_000)).toBe("2m");
-    expect(formatDuration(3_900_000)).toBe("1h 5m");
-    expect(formatDuration(7_200_000)).toBe("2h");
-    expect(formatDuration(-1)).toBe("0s");
   });
 });

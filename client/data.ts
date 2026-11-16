@@ -1,8 +1,9 @@
-import { getPaseoClient, usePaseo, useHosts } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import type { PaseoAgent, PaseoApi } from "./paseo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { BOT_LABEL } from "../shared/bot";
+import { listBotChats } from "../shared/chat";
+import { botHomeRpc } from "../shared/rpc";
 import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 
 export interface LocalHost {
@@ -15,44 +16,12 @@ export interface BotHost {
   /** Stable key for queries; the local host uses its own id. */
   key: string;
   label: string;
-  isLocal: boolean;
-  online: boolean;
 }
 
-type HostSummaries = ReturnType<typeof useHosts>;
-
-function resolveHost(hostId: string | null, local: LocalHost, localApi: PaseoApi, hosts: HostSummaries): BotHost {
-  if (!hostId || hostId === local.id) {
-    return { api: localApi, key: local.id, label: local.label, isLocal: true, online: true };
-  }
-  const summary = hosts.find((host) => host.serverId === hostId);
-  const label = summary?.label ?? "Unknown host";
-  if (summary?.status !== "online") return { api: null, key: hostId, label, isLocal: false, online: false };
-  try {
-    return { api: getPaseoClient(hostId), key: hostId, label, isLocal: false, online: true };
-  } catch {
-    return { api: null, key: hostId, label, isLocal: false, online: false };
-  }
-}
-
-/** Resolves the host a bot runs on. `hostId === null` is the host that stores the bots. */
-export function useBotHost(hostId: string | null, local: LocalHost): BotHost {
-  const localApi = usePaseo();
-  const hosts = useHosts();
-  const summary = hostId ? hosts.find((host) => host.serverId === hostId) : undefined;
-  const status = summary?.status;
-  return useMemo(
-    () => resolveHost(hostId, local, localApi, hosts),
-    // Only the fields that change the result.
-    [hostId, local.id, local.label, localApi, summary?.label, status],
-  );
-}
-
-/** The same resolution outside render, e.g. for menu actions. */
-export function useHostResolver(local: LocalHost): (hostId: string | null) => BotHost {
-  const localApi = usePaseo();
-  const hosts = useHosts();
-  return (hostId) => resolveHost(hostId, local, localApi, hosts);
+/** The host that stores the bots, where every bot runs. */
+export function useBotHost(local: LocalHost): BotHost {
+  const api = usePaseo();
+  return useMemo(() => ({ api, key: local.id, label: local.label }), [api, local.id, local.label]);
 }
 
 export function useProviders(host: BotHost) {
@@ -76,34 +45,15 @@ export function useAgentProfiles(host: BotHost) {
   });
 }
 
-export function useHostWorkspaces(host: BotHost) {
-  return useQuery({
-    queryKey: ["paseo-bots", "workspaces", host.key],
-    enabled: !!host.api,
-    staleTime: 30_000,
-    queryFn: async () => {
-      const result = await host.api!.workspaces.list();
-      return result.entries.map((workspace) => ({
-        id: workspace.id,
-        label: workspace.title || `${workspace.projectDisplayName} · ${workspace.name}`,
-        directory: workspace.workspaceDirectory ?? workspace.projectRootPath,
-      }));
-    },
-  });
-}
-
 export function useBotChats(host: BotHost, botId: string) {
+  const botHome = useRpc(botHomeRpc);
   return useQuery({
     queryKey: ["paseo-bots", "chats", host.key, botId],
     enabled: !!host.api,
-    // The local host pushes agent updates (useChatInvalidation); other hosts are polled.
-    refetchInterval: host.isLocal ? false : 15_000,
+    // The host pushes agent updates (useChatInvalidation).
     queryFn: async (): Promise<PaseoAgent[]> => {
-      const result = await host.api!.agents.list({ filter: { labels: { [BOT_LABEL]: botId } } });
-      return result.entries
-        .map((entry) => entry.agent)
-        .filter((agent) => !agent.archivedAt)
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+      const { path } = await botHome({ botId });
+      return (await listBotChats(host.api!, botId, path)).filter((agent) => !agent.archivedAt);
     },
   });
 }
@@ -157,4 +107,21 @@ export function usePaseoTools(host: BotHost, provider: string) {
     await queryClient.invalidateQueries({ queryKey: key });
   };
   return { state, loading: config.isLoading, turnOn };
+}
+
+type TimelinePage = Awaited<ReturnType<ReturnType<PaseoApi["agents"]["ref"]>["timeline"]["refetch"]>>;
+type ChatEntry = TimelinePage["entries"][number];
+
+/** A chat's whole timeline, oldest first, page by page (a transcript needs all of it). */
+export async function fullTimeline(api: PaseoApi, agentId: string): Promise<ChatEntry[]> {
+  const handle = api.agents.ref(agentId);
+  const bySeq = new Map<number, ChatEntry>();
+  let page = await handle.timeline.refetch({ direction: "tail", projection: "projected", limit: 200 });
+  for (let pages = 0; ; pages++) {
+    if (page.error) throw new Error(page.error);
+    for (const entry of page.entries) bySeq.set(entry.seqStart, entry);
+    if (pages >= 100 || page.entries.length === 0 || !page.hasOlder || !page.startCursor) break;
+    page = await handle.timeline.refetch({ direction: "before", cursor: page.startCursor, projection: "projected", limit: 200 });
+  }
+  return [...bySeq.values()].sort((a, b) => a.seqStart - b.seqStart);
 }

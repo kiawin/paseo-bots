@@ -2,13 +2,15 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildAgentConfig, EMPTY_LIBRARY } from "../shared/bot";
+import { applyBotConfig, EMPTY_LIBRARY } from "../shared/bot";
 import { botToolName, supportsToolGrants } from "../shared/bot-tools";
-import { withPluginCommands } from "../client/chat/composer/logic";
 import { proposalIdOf } from "../shared/proposals";
-import { expandLearn, sanitizeSkillName } from "../shared/skills";
+import { learnPrompt, sanitizeSkillName } from "../shared/skills";
 import { newUuid } from "../shared/uuid";
 import { fakeHost, makeBot } from "./helpers";
+
+/** A new chat in the bot's folder, before the bot's settings apply. */
+const BASE = { provider: "claude", cwd: "/bots/inbox" };
 
 describe("tool names and grants", () => {
   it("recognises the plugin's tools whatever the provider calls them", () => {
@@ -24,21 +26,16 @@ describe("tool names and grants", () => {
     expect(supportsToolGrants("opencode")).toBe(true);
     expect(supportsToolGrants("gemini")).toBe(false);
     const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
-    const claude = buildAgentConfig(makeBot({ alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools });
+    const claude = applyBotConfig(BASE, makeBot({ alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "", { tools });
     expect(claude.mcpServers).toEqual({ bots: tools });
-    expect(claude.toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "ask_bot"]);
+    expect(claude.toolPolicy?.preapproved.map((grant: { tool: string }) => grant.tool)).toEqual(["list_bots", "check_chat", "search_chats", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "ask_bot"]);
     // Paseo refuses a chat whose provider can't take grants, so none are sent.
-    expect(buildAgentConfig(makeBot({ provider: "gemini", alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "m", "", { tools })).not.toHaveProperty("toolPolicy");
+    expect(applyBotConfig(BASE, makeBot({ provider: "gemini", alwaysAllow: ["bots/ask_bot"] }), EMPTY_LIBRARY, "", { tools })).not.toHaveProperty("toolPolicy");
   });
 
-  it("expands /learn and lists it before provider commands", () => {
-    expect(expandLearn("/learn")).toContain("propose_skill");
-    expect(expandLearn("  /learn the invoice part ")).toContain("Focus on: the invoice part.");
-    expect(expandLearn("/learner")).toBeNull();
-    expect(expandLearn("please /learn")).toBeNull();
-    const learn = { name: "learn", description: "ours", argumentHint: "" };
-    const provider = [{ name: "learn", description: "theirs", argumentHint: "" }, { name: "compact", description: "", argumentHint: "" }];
-    expect(withPluginCommands([learn], provider).map((command) => command.description)).toEqual(["ours", ""]);
+  it("writes the /learn prompt", () => {
+    expect(learnPrompt()).toContain("propose_skill");
+    expect(learnPrompt(" the invoice part ")).toContain("Focus on: the invoice part.");
   });
 
   it("finds the proposal behind a finished propose_skill call", () => {
@@ -109,7 +106,7 @@ describe("the bots MCP server", () => {
     const { acceptProposal, dismissProposal, getProposal } = await import("../server/proposals");
     const { librarySkillPath } = await import("../server/library");
     const host = fakeHost([makeBot({ id: "bot-a" })]);
-    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host, relay: null as never };
+    const caller = { bot: makeBot({ id: "bot-a" }), agentId: newUuid(), host };
     const reply = await proposeSkill.run({ name: "Weekly Report!", description: "Use for the\nweekly report", instructions: "1. Collect PRs." }, caller);
     const id = proposalIdOf({ name: "bots.propose_skill", status: "completed", detail: { output: reply } })!;
     expect(id).toMatch(/^p-[a-z0-9]{10}$/);

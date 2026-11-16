@@ -565,3 +565,21 @@ export const SPLASH_LINEUP: readonly { sprite: SpriteName; palette: number; acce
 export function randomSeed(): string {
   return Math.random().toString(36).slice(2, 10);
 }
+
+/**
+ * A generated avatar as an SVG file (the bot's project icon), drawn like the app's PixelSprite:
+ * the sprite inset on its background and clipped to the avatar's shape.
+ */
+export function avatarSvg(avatar: { seed: string; palette?: number | null; shape?: "circle" | "rounded" | "square" }): string {
+  const sprite = pixelAvatar(avatar.seed, avatar.palette ?? null);
+  const size = 64;
+  const radius = avatar.shape === "square" ? size * 0.12 : avatar.shape === "rounded" ? size * 0.28 : size / 2;
+  const inner = size * 0.82;
+  const pixel = inner / SPRITE_SIZE;
+  const offset = (size - inner) / 2;
+  const n = (value: number) => Number(value.toFixed(3));
+  const rects = sprite.rows.flatMap((runs, y) =>
+    runs.flatMap((run) => (run.color ? [`<rect x="${n(offset + run.x * pixel)}" y="${n(offset + y * pixel)}" width="${n(run.width * pixel + 0.3)}" height="${n(pixel + 0.3)}" fill="${run.color}"/>`] : [])),
+  );
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><clipPath id="c"><rect width="${size}" height="${size}" rx="${n(radius)}"/></clipPath><g clip-path="url(#c)"><rect width="${size}" height="${size}" fill="${sprite.background}"/>${rects.join("")}</g></svg>`;
+}

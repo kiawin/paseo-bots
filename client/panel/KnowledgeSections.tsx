@@ -4,10 +4,10 @@ import { SettingsAction, SettingsCard, SettingsRow, SettingsSection } from "@get
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { newPlaybookId, SOUL_MAX_BYTES, utf8Bytes, type Playbook } from "../../shared/bot";
-import { parseTriggers } from "../../shared/playbooks";
-import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
-import { useBotHost } from "../data";
+import { SOUL_MAX_BYTES, utf8Bytes } from "../../shared/bot";
+import { runbookFileName } from "../../shared/playbooks";
+import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc, runbookDeleteRpc, runbookListRpc, runbookReadRpc, runbookWriteRpc } from "../../shared/rpc";
+import { skillMarkdown } from "../../shared/skills";
 import { confirmDialog, errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { LibraryPicker } from "./LibraryPicker";
@@ -18,14 +18,6 @@ type Colors = PanelProps["colors"];
 
 const kb = (bytes: number) => (bytes / 1000).toFixed(1);
 
-
-function LocalOnly({ colors, what }: { colors: Colors; what: string }) {
-  return (
-    <View style={{ marginBottom: 24 }}>
-      <Alert colors={colors} description={`${what} live on the host that stores this bot, so they only apply while the bot runs there.`} />
-    </View>
-  );
-}
 
 // ---------------------------------------------------------------- soul
 
@@ -91,13 +83,7 @@ function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: 
 // ---------------------------------------------------------------- skills
 
 export function SkillsSection(props: PanelProps) {
-  const host = useBotHost(props.bot.hostId, props.localHost);
-  return (
-    <>
-      {!host.isLocal ? <LocalOnly colors={props.colors} what="Skills" /> : null}
-      <LibraryPicker {...props} kind="skill" title="Skills" info="Switched-on skills are listed in the bot's prompt and read when a task needs them. Add and edit skills in Skills & Tools." />
-    </>
-  );
+  return <LibraryPicker {...props} kind="skill" title="Skills" info="Switched-on skills are listed in the bot's prompt and read when a task needs them. Add and edit skills in Skills & Tools." />;
 }
 
 // ---------------------------------------------------------------- memory
@@ -106,8 +92,7 @@ const TOPIC_NAME = /^[A-Za-z0-9 ._-]+$/;
 const MEMORY_LINES = 200;
 const MEMORY_BYTES = 24_000;
 
-export function MemorySection({ colors, bot, localHost }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+export function MemorySection({ colors, bot }: PanelProps) {
   const list = useRpc(memoryListRpc);
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -126,7 +111,6 @@ export function MemorySection({ colors, bot, localHost }: PanelProps) {
 
   return (
     <>
-      {!host.isLocal ? <LocalOnly colors={colors} what="Memory files" /> : null}
       <SettingsSection
         title="Files"
         info="The bot updates these itself as it learns; edit them to correct or add facts. MEMORY.md is loaded into every chat, topic files are read on demand."
@@ -289,70 +273,150 @@ function MemorySheet({ colors, botId, name, onChanged, onClose }: { colors: Colo
   );
 }
 
-// ---------------------------------------------------------------- playbooks
+// ---------------------------------------------------------------- runbooks
 
-/** OpenMausBot's playbooks: step-by-step guidance a chat gets when its first message mentions a trigger. */
-export function PlaybooksSection({ colors, bot, onPatch }: PanelProps) {
-  const [editing, setEditing] = useState<Playbook | "new" | null>(null);
-  const save = (playbook: Playbook) => {
-    onPatch({ playbooks: bot.playbooks.some((entry) => entry.id === playbook.id) ? bot.playbooks.map((entry) => (entry.id === playbook.id ? playbook : entry)) : [...bot.playbooks, playbook] });
-    setEditing(null);
-  };
-  const remove = async (playbook: Playbook) => {
-    if (!(await confirmDialog({ title: "Delete playbook", message: `Delete "${playbook.name}"? This cannot be undone.`, confirmLabel: "Delete", destructive: true }))) return;
-    onPatch({ playbooks: bot.playbooks.filter((entry) => entry.id !== playbook.id) });
-    setEditing(null);
-  };
+/** Step-by-step guides for the bot's recurring jobs: Markdown files in its runbooks folder, which every chat lists. */
+export function RunbooksSection({ colors, bot }: PanelProps) {
+  const list = useRpc(runbookListRpc);
+  const queryClient = useQueryClient();
+  const key = ["paseo-bots", "runbooks", bot.id];
+  const runbooks = useQuery({ queryKey: key, queryFn: () => list({ botId: bot.id }) });
+  const [open, setOpen] = useState<string | "new" | null>(null);
+  const changed = () => void queryClient.invalidateQueries({ queryKey: key });
+  const files = runbooks.data?.runbooks ?? [];
   return (
     <>
       <SettingsSection
-        title="Playbooks"
-        info="Steps for a kind of job. A chat gets a playbook when its first message mentions one of the playbook's trigger words, up to three at a time."
-        trailing={<SectionLink colors={colors} label="New playbook" onPress={() => setEditing("new")} />}
+        title="Runbooks"
+        info={`Steps for the bot's recurring jobs, one Markdown file each${runbooks.data?.folder ? ` in ${runbooks.data.folder}` : " in its folder's runbooks"}. Every chat lists them and the bot reads the one a job needs. The bot can write and improve them too.`}
+        trailing={<SectionLink colors={colors} label="New runbook" onPress={() => setOpen("new")} />}
       >
         <SettingsCard>
-          {bot.playbooks.length === 0 ? <CardNote colors={colors} text="No playbooks yet" /> : null}
-          {bot.playbooks.map((playbook) => (
-            <DrillRow
-              key={playbook.id}
-              colors={colors}
-              label={playbook.name || "Untitled playbook"}
-              hint={playbook.triggers.length ? `When a chat mentions ${playbook.triggers.join(", ")}` : "No trigger words, so no chat gets it"}
-              onPress={() => setEditing(playbook)}
-            />
+          {runbooks.isLoading ? <CardNote colors={colors} text="Loading..." /> : files.length === 0 ? <CardNote colors={colors} text="No runbooks yet" /> : null}
+          {files.map((runbook) => (
+            <DrillRow key={runbook.file} colors={colors} label={runbook.file.replace(/\.md$/, "")} hint={runbook.description || "No description"} onPress={() => setOpen(runbook.file)} />
           ))}
         </SettingsCard>
       </SettingsSection>
-      {editing ? <PlaybookSheet colors={colors} playbook={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSave={save} onDelete={editing === "new" ? undefined : () => void remove(editing)} /> : null}
+      {open === "new" ? (
+        <NewRunbookSheet colors={colors} taken={files.map((runbook) => runbook.file)} botId={bot.id} onClose={() => setOpen(null)} onCreated={(file) => {
+          changed();
+          setOpen(file);
+        }} />
+      ) : open ? (
+        <RunbookSheet colors={colors} botId={bot.id} file={open} onChanged={changed} onClose={() => setOpen(null)} />
+      ) : null}
     </>
   );
 }
 
-function PlaybookSheet({ colors, playbook, onClose, onSave, onDelete }: { colors: Colors; playbook: Playbook | null; onClose(): void; onSave(playbook: Playbook): void; onDelete?: () => void }) {
-  const [name, setName] = useState(playbook?.name ?? "");
-  const [triggers, setTriggers] = useState(playbook?.triggers.join(", ") ?? "");
-  const [instructions, setInstructions] = useState(playbook?.instructions ?? "");
-  const parsed = parseTriggers(triggers);
-  const canSave = !!name.trim() && parsed.length > 0 && !!instructions.trim();
+function NewRunbookSheet({ colors, botId, taken, onClose, onCreated }: { colors: Colors; botId: string; taken: readonly string[]; onClose(): void; onCreated(file: string): void }) {
+  const write = useRpc(runbookWriteRpc);
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const file = `${runbookFileName(name)}.md`;
+  const clash = !!name.trim() && taken.includes(file);
+  const create = async () => {
+    try {
+      await write({ botId, file, text: skillMarkdown(name.replace(/\s+/g, " ").trim(), "When to use this runbook.", "1. ...") });
+      onCreated(file);
+    } catch (error) {
+      toast.error(errorText(error));
+    }
+  };
   return (
-    <Modal title={playbook ? "Edit playbook" : "New playbook"} open onOpenChange={(open) => !open && onClose()}>
+    <Modal title="New runbook" open onOpenChange={(value) => !value && onClose()}>
       <Modal.Content contentContainerStyle={{ gap: 0 }}>
         <View style={{ marginBottom: 24 }}>
           <SettingsCard>
-            <InputField colors={colors} label="Name" initialValue={name} placeholder="Month-end close" onChangeText={setName} />
-            <InputField colors={colors} label="Trigger words" hint="Comma-separated words or phrases" initialValue={triggers} placeholder="month end, close the books" onChangeText={setTriggers} />
-            <TextAreaField colors={colors} label="Steps" hint="Markdown. The bot follows these when a chat matches." value={instructions} onChangeText={setInstructions} minHeight={240} placeholder={"1. Export last month's transactions.\n2. Reconcile them against the bank statement.\n3. ..."} />
+            <InputField colors={colors} label="Name" hint={name.trim() ? `Saved as runbooks/${file}` : "What job it covers"} error={clash ? "A runbook with that name exists" : null} initialValue="" placeholder="Month-end close" onChangeText={setName} />
           </SettingsCard>
         </View>
-        <SheetActions leading={onDelete ? <Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={onDelete} /> : null}>
+        <SheetActions>
           <Button colors={colors} variant="ghost" label="Cancel" onPress={onClose} />
-          <Button
-            colors={colors}
-            variant="default"
-            label="Save"
-            disabled={!canSave}
-            onPress={() => onSave({ id: playbook?.id ?? newPlaybookId(), name: name.trim().slice(0, 80), triggers: parsed, instructions })}
-          />
+          <Button colors={colors} variant="default" label="Create" disabled={!name.trim() || clash} onPress={() => void create()} />
+        </SheetActions>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+/** One runbook file in a sheet, frontmatter and all. Closing with unsaved edits asks before discarding them. */
+function RunbookSheet({ colors, botId, file, onChanged, onClose }: { colors: Colors; botId: string; file: string; onChanged(): void; onClose(): void }) {
+  const read = useRpc(runbookReadRpc);
+  const write = useRpc(runbookWriteRpc);
+  const remove = useRpc(runbookDeleteRpc);
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const [text, setText] = useState<string | null>(null);
+  const [saved, setSaved] = useState("");
+  const [saving, setSaving] = useState(false);
+  const label = `runbooks/${file}`;
+  const dirty = text !== null && text !== saved;
+
+  useEffect(() => {
+    let cancelled = false;
+    void read({ botId, file })
+      .then(({ text: loaded }) => {
+        if (cancelled) return;
+        setText(loaded);
+        setSaved(loaded);
+      })
+      .catch((error: unknown) => !cancelled && toastRef.current.error(errorText(error)));
+    return () => {
+      cancelled = true;
+    };
+  }, [botId, file, read]);
+
+  const close = async () => {
+    if (dirty && !(await confirmDialog({ title: "Discard changes", message: `Discard your changes to ${label}?`, confirmLabel: "Discard", destructive: true }))) return;
+    onClose();
+  };
+
+  const save = async () => {
+    if (text === null) return;
+    setSaving(true);
+    try {
+      // Bots edit their runbooks themselves; don't overwrite a change made since it was opened.
+      const current = (await read({ botId, file })).text;
+      if (current !== saved && current !== text) {
+        toast.error("The bot changed this file since you opened it. Close it and open it again.");
+        return;
+      }
+      await write({ botId, file, text });
+      setSaved(text);
+      onChanged();
+      onClose();
+    } catch (error) {
+      toast.error(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const destroy = async () => {
+    if (!(await confirmDialog({ title: "Delete runbook", message: `Delete ${label}? This cannot be undone.`, confirmLabel: "Delete", destructive: true }))) return;
+    await remove({ botId, file });
+    onChanged();
+    onClose();
+  };
+
+  return (
+    <Modal title={label} open onOpenChange={(value) => !value && void close()}>
+      <Modal.Content>
+        {text === null ? (
+          <SettingsCard>
+            <View style={{ minHeight: 320, alignItems: "center", justifyContent: "center" }}>
+              <ActivityIndicator size="small" color={colors.foregroundMuted} />
+            </View>
+          </SettingsCard>
+        ) : (
+          <FormTextArea colors={colors} monospace accessibilityLabel={`${label} contents`} value={text} onChangeText={setText} minHeight={320} placeholder={"---\nname: Month-end close\ndescription: Use when closing the books.\n---\n\n1. Export last month's transactions."} />
+        )}
+        <SheetActions leading={<Button colors={colors} variant="ghost" label="Delete" icon="Trash2" onPress={() => void destroy()} />}>
+          <Button colors={colors} variant="ghost" label="Reset" disabled={!dirty || saving} onPress={() => setText(saved)} />
+          <Button colors={colors} variant="default" label={saving ? "Saving..." : "Save"} disabled={!dirty || saving} onPress={() => void save()} />
         </SheetActions>
       </Modal.Content>
     </Modal>

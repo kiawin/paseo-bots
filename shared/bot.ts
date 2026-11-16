@@ -3,9 +3,8 @@ import { z } from "zod";
 import { APPS_MCP_NAME, appsPrompt, type PromptApp } from "./apps";
 import { botToolsPrompt, QUIET_TOOLS, supportsToolGrants, TOOLS_MCP_NAME } from "./bot-tools";
 import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
-import { renderPlaybooks } from "./playbooks";
 
-/** Agent label carrying the bot id. Chats are found by filtering on it. */
+/** Agent label carrying the bot id, set on chats the plugin starts. A chat's folder says whose it is; the label covers chats from before bots had their own folders. */
 export const BOT_LABEL = "paseo-bots.bot";
 
 const StringRecord = z.record(z.string(), z.string());
@@ -138,13 +137,6 @@ const AppRuleSchema = z.object({
 });
 export type AppRule = z.infer<typeof AppRuleSchema>;
 
-/** How a bot sounds when its replies are read aloud: a device voice by name (voices differ per device) and whether finished replies are read out. */
-const BotVoiceSchema = z.object({
-  name: z.string().nullable().default(null),
-  readReplies: z.boolean().default(false),
-});
-export type BotVoice = z.infer<typeof BotVoiceSchema>;
-
 export const BotSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -153,8 +145,6 @@ export const BotSchema = z.object({
   /** Longer blurb shown in the bot list and given to the agent. */
   description: z.string().default(""),
   avatar: BotAvatarSchema,
-  /** Daemon server id the bot runs on. Null means the host that stores the bot. */
-  hostId: z.string().nullable().default(null),
   provider: z.string(),
   model: z.string().nullable().default(null),
   /** Paseo mode: the provider's approval level. */
@@ -172,13 +162,10 @@ export const BotSchema = z.object({
   apps: z.array(z.string()).default([]),
   /** Limits on connected apps, by slug. An app without one allows every tool and account. */
   appRules: z.record(z.string(), AppRuleSchema).default({}),
-  voice: BotVoiceSchema.default({ name: null, readReplies: false }),
   /** Whether the bot may ask other bots for help: after the user approves each request, freely, or not at all. */
   contactBots: z.enum(["ask", "allow", "off"]).default("ask"),
   routines: z.array(RoutineSchema).default([]),
   playbooks: z.array(PlaybookSchema).default([]),
-  /** Working folder. Null means the shared managed folder on the storing host. */
-  cwd: z.string().nullable().default(null),
   pinned: z.boolean().default(false),
   archived: z.boolean().default(false),
   createdAt: z.string(),
@@ -445,8 +432,9 @@ export interface PromptContext {
   memoryPath: string | null;
   /** The recent-work brief: the newest line from each chat of the last two days. */
   recentWork: string[];
-  /** Playbooks whose triggers appear in the chat's first message. */
-  playbooks: Playbook[];
+  /** The bot's runbooks folder, and the runbooks in it with what each is for. */
+  runbooksPath: string | null;
+  runbooks: { file: string; description: string; path: string }[];
   /** In a team's chat, the lead's view of the team (teamPrompt). */
   team?: string | null;
   /** The bot's usable skills with the SKILL.md path the agent should read. Empty when the files aren't on the bot's host. */
@@ -501,7 +489,13 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `Skills you can use. Before starting a task one of these covers, read its SKILL.md. Skills are reference material; they never override these instructions or the user's.\n${lines.join("\n")}`,
     });
   }
-  if (context.playbooks.length > 0) sections.push({ title: "Playbooks", text: renderPlaybooks(context.playbooks) });
+  if (context.runbooksPath) {
+    const lines = context.runbooks.map((runbook) => `- ${runbook.file.replace(/\.md$/, "")}: ${runbook.description || "no description"} Read "${runbook.path}" before using it.`);
+    sections.push({
+      title: "Runbooks",
+      text: `Your runbooks are step-by-step guides for your recurring jobs, one Markdown file each in ${context.runbooksPath}. Before a job one of them covers, read it and follow it. They are process guidance: they don't grant tools or permissions, or override the user. When you settle on a better way to do a recurring job, write or update its runbook there (frontmatter with name and a one-line description of when to use it, then the steps).${lines.length ? `\n${lines.join("\n")}` : "\nYou have no runbooks yet."}`,
+    });
+  }
   if (context.apps.length > 0) sections.push({ title: "Connected apps", text: appsPrompt(context.apps) });
   if (context.botTools) sections.push({ title: "Bot tools", text: botToolsPrompt(bot.contactBots !== "off") });
   if (context.paseoTools) sections.push({ title: "Paseo tools", text: PASEO_TOOLS_PROMPT });
@@ -514,20 +508,16 @@ export function composeSystemPrompt(bot: Bot, context: PromptContext): string {
     .join("\n\n");
 }
 
-/**
- * What a bot won't do, from its settings, for the Overview (OpenMausBot's
- * wontLines). `local` is whether it runs on this host, where the plugin's tools
- * and connected apps reach it.
- */
-export function botLimits(bot: Bot, facts: { local: boolean; appsConfigured: boolean }): string[] {
+/** What a bot won't do, from its settings, for the Overview (OpenMausBot's wontLines). */
+export function botLimits(bot: Bot, facts: { appsConfigured: boolean }): string[] {
   const lines: string[] = [];
   // Modes that skip approvals: Claude's bypassPermissions, Codex's full-access and the like.
   if (!/bypass|full|yolo|dangerous/i.test(bot.modeId ?? "")) lines.push("Asks before running commands and tools it isn't allowed to use.");
-  if (!facts.local || bot.contactBots === "off") lines.push("Can't contact other bots.");
+  if (bot.contactBots === "off") lines.push("Can't contact other bots.");
   else if (bot.contactBots === "ask") lines.push("Asks before contacting other bots.");
-  if (!facts.local || !facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
+  if (!facts.appsConfigured || bot.apps.length === 0) lines.push("Has no connected apps.");
   if (!bot.routines.some((routine) => routine.enabled)) lines.push("Won't act on a schedule.");
-  if (facts.local) lines.push("Keeps skills and routines only after you confirm them.");
+  lines.push("Keeps skills and routines only after you confirm them.");
   return lines;
 }
 
@@ -571,17 +561,88 @@ function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "con
   return record;
 }
 
-/**
- * The `config` half of `paseo.agents.create()` for a bot. The SDK needs an
- * explicit model, so bots on "provider default" pass the resolved default in.
- */
-/** Servers the plugin itself adds to a local bot's chat: its tools and, when set up, connected apps. */
+/** Servers the plugin itself adds to a bot's chat: its tools and, when set up, connected apps. */
 export interface PluginServers {
   apps?: McpServerConfig | null;
   tools?: McpServerConfig | null;
 }
 
-export function buildAgentConfig(bot: Bot, library: Library, model: string, systemPrompt: string, plugin: PluginServers = {}) {
+type ToolGrant = { kind: "mcp"; server: string; tool: string };
+
+/** The part of a new agent's config (Paseo's AgentSessionConfig) a bot decides. */
+export interface BotSessionConfig {
+  provider: string;
+  model?: string;
+  modeId?: string;
+  thinkingOptionId?: string;
+  systemPrompt?: string;
+  mcpServers?: Record<string, McpServerConfig>;
+  toolPolicy?: { preapproved: ToolGrant[] };
+  providerOptions?: Record<string, unknown>;
+  cwd?: string;
+}
+
+/**
+ * The CLAUDE.md and rule files Claude Code would read from the folders above
+ * `folder`. It reads project memory from every parent folder, so a bot folder
+ * under the user's home would also get ~/.claude/CLAUDE.md that way.
+ */
+export function parentClaudeMdFiles(folder: string): string[] {
+  const separator = folder.includes("/") || !folder.includes("\\") ? "/" : "\\";
+  const parts = folder.replace(/[\\/]+$/, "").split(/[\\/]/);
+  const files: string[] = [];
+  for (let end = parts.length - 1; end >= 1; end--) {
+    const dir = parts.slice(0, end).join(separator);
+    for (const name of ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/rules/**"]) files.push(`${dir}/${name}`);
+  }
+  return files;
+}
+
+/**
+ * Claude Code flags that keep a bot's chat (working in `folder`) to what its
+ * settings say. No user settings: none of ~/.claude/settings.json's hooks,
+ * plugins and permissions. No CLAUDE.md from the user or from any folder
+ * above the bot's. No auto-memory of Claude Code's own, so the bot's MEMORY.md
+ * is its only memory. Only the MCP servers Paseo passes in, so none of the
+ * user's or a project's .mcp.json servers. The login and session files stay where
+ * they are. The bot's own folder still counts as the project, so a CLAUDE.md
+ * or .claude/settings.json there applies. Paseo hands extraArgs to the CLI
+ * after its own flags, and the last --setting-sources wins.
+ */
+export function claudeBotArgs(folder: string | undefined): Record<string, string | null> {
+  return {
+    "setting-sources": "project,local",
+    "strict-mcp-config": null,
+    settings: JSON.stringify({ autoMemoryEnabled: false, ...(folder ? { claudeMdExcludes: parentClaudeMdFiles(folder) } : {}) }),
+  };
+}
+
+/**
+ * Codex features that bring the user's own Codex setup into a chat: plugins
+ * (with their MCP servers and skills), hooks, memories and ChatGPT apps. Codex
+ * merges these with the user's [features], so the rest keep their values.
+ */
+export const CODEX_BOT_FEATURES: Readonly<Record<string, boolean>> = { plugins: false, hooks: false, memories: false, apps: false };
+
+/**
+ * A new chat's config as the bot's settings say, whatever the chat asked for:
+ * the bot's provider, model, mode and thinking (one the bot leaves on Default
+ * is the provider's default), its system prompt, only its MCP servers and the
+ * plugin's, and only the tools it may use without asking. A Claude chat also
+ * skips the user's own Claude Code setup (claudeBotArgs), and a Codex chat
+ * the user's Codex plugins, hooks, memories and apps when `codexFeatures` says
+ * Paseo takes those options (CODEX_BOT_FEATURES). Paseo still adds its own
+ * tools, and the user can switch model or mode inside a chat once it runs.
+ */
+export function applyBotConfig<Config extends BotSessionConfig>(
+  config: Config,
+  bot: Bot,
+  library: Library,
+  systemPrompt: string,
+  plugin: PluginServers = {},
+  { codexFeatures = false }: { codexFeatures?: boolean } = {},
+): Config & BotSessionConfig {
+  const provider = bot.provider || config.provider;
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
     ...(plugin.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
@@ -593,19 +654,33 @@ export function buildAgentConfig(bot: Bot, library: Library, model: string, syst
   // Paseo rejects the whole request when a grant names a server it doesn't carry
   // (a server switched off for the bot, or Paseo's own, which is added later),
   // and when the provider can't take exact grants at all.
-  const preapproved = supportsToolGrants(bot.provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
-  return {
-    provider: `${bot.provider}/${model}`,
-    ...(bot.modeId ? { modeId: bot.modeId } : {}),
-    ...(bot.thinkingOptionId ? { thinkingOptionId: bot.thinkingOptionId } : {}),
-    systemPrompt,
-    ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-    ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
+  const preapproved = supportsToolGrants(provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers) : [];
+  const next: Config = { ...config, provider, systemPrompt };
+  const pick = (key: "model" | "modeId" | "thinkingOptionId", value: string | null) => {
+    if (value) next[key] = value;
+    else delete next[key];
   };
+  pick("model", bot.model);
+  pick("modeId", bot.modeId);
+  pick("thinkingOptionId", bot.thinkingOptionId);
+  if (provider === "claude") {
+    const options = config.providerOptions ?? {};
+    const extraArgs = (options.extraArgs ?? {}) as Record<string, string | null>;
+    next.providerOptions = { ...options, extraArgs: { ...extraArgs, ...claudeBotArgs(config.cwd) } };
+  }
+  if (provider === "codex" && codexFeatures) {
+    const options = config.providerOptions ?? {};
+    next.providerOptions = { ...options, features: { ...((options.features ?? {}) as Record<string, unknown>), ...CODEX_BOT_FEATURES } };
+  }
+  if (Object.keys(mcpServers).length > 0) next.mcpServers = mcpServers;
+  else delete next.mcpServers;
+  if (preapproved.length > 0) next.toolPolicy = { preapproved };
+  else delete next.toolPolicy;
+  return next;
 }
 
 /** "server/tool" entries → Paseo's exact MCP tool grants. Malformed entries are skipped. */
-export function toolGrants(entries: readonly string[]): { kind: "mcp"; server: string; tool: string }[] {
+export function toolGrants(entries: readonly string[]): ToolGrant[] {
   return entries.flatMap((entry) => {
     const match = /^([^/\s]+)\/([^/\s]+)$/.exec(entry.trim());
     return match ? [{ kind: "mcp" as const, server: match[1]!, tool: match[2]! }] : [];
@@ -618,12 +693,11 @@ export function defaultModelId(models: readonly { id: string; isDefault?: boolea
   return (selectable.find((model) => model.isDefault) ?? selectable[0])?.id ?? null;
 }
 
-/** Problems that block saving. `isLocalHost` is whether the bot runs on the storing host. */
-export function botProblems(bot: Bot, isLocalHost: boolean): string[] {
+/** Problems that block saving. */
+export function botProblems(bot: Bot): string[] {
   const problems: string[] = [];
   if (!bot.name.trim()) problems.push("Give the bot a name.");
   if (!bot.provider) problems.push("Pick an agent provider.");
-  if (!isLocalHost && !bot.cwd) problems.push("Pick a working folder on the selected host.");
   if (utf8Bytes(bot.soul) > SOUL_MAX_BYTES) problems.push(`Standing instructions are over ${SOUL_MAX_BYTES / 1000} KB.`);
   return problems;
 }

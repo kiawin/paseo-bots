@@ -1,17 +1,18 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { openExternalUrl, useAgent, usePaseo } from "@getpaseo/plugin/client";
+import { openExternalUrl, usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import type { AppSignIn } from "../../../shared/apps";
-import { BOT_LABEL } from "../../../shared/bot";
-import { useAppsAccounts, useAppsCatalog } from "../../library/apps";
-import { AppLogo } from "../../library/parts";
-import { errorText } from "../../native";
-import { StatusBadge } from "../../panel/controls";
-import { ui } from "../../typography";
-import { useBotSettings } from "../../useBotSettings";
-import { CardButton } from "./ui";
+import type { AppSignIn } from "../../shared/apps";
+import { chatBotRpc } from "../../shared/rpc";
+import { useAppsAccounts, useAppsCatalog } from "../library/apps";
+import { AppLogo } from "../library/parts";
+import { errorText } from "../native";
+import { StatusBadge } from "../panel/controls";
+import { ui } from "../typography";
+import { useBotSettings } from "../useBotSettings";
+import { CardButton } from "./CardButton";
 
 type Colors = PluginTheme["colors"];
 
@@ -104,6 +105,7 @@ export function ConnectCard({ colors, signIn, since, agentId, botId }: { colors:
 
 /** The card in Paseo's own agent view, which knows the chat but not its bot. */
 export function NativeConnectCard(props: { colors: Colors; signIn: AppSignIn; since: number; agentId: string }) {
-  const botId = useAgent(props.agentId, (agent) => agent.labels[BOT_LABEL] ?? null);
-  return <ConnectCard {...props} botId={botId} />;
+  const chatBot = useRpc(chatBotRpc);
+  const botId = useQuery({ queryKey: ["paseo-bots", "chat-bot", props.agentId], staleTime: Infinity, queryFn: async () => (await chatBot({ agentId: props.agentId })).botId });
+  return <ConnectCard {...props} botId={botId.data ?? null} />;
 }

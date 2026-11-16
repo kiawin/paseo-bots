@@ -1,4 +1,4 @@
-import { useHosts, useRpc } from "@getpaseo/plugin/client";
+import { useRpc } from "@getpaseo/plugin/client";
 import { Modal, useToast } from "@getpaseo/plugin/client/react-native";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,92 +7,38 @@ import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, toolGrants } from "../../shared/bot";
 import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
 import { commandListRpc, commandRemoveRpc } from "../../shared/rpc";
-import { useAgentProfiles, useBotHost, useHostWorkspaces, usePaseoTools, useProviders } from "../data";
+import { useAgentProfiles, useBotHost, usePaseoTools, useProviders } from "../data";
 import { errorText } from "../native";
 import type { PanelProps } from "./BotPanel";
 import { AdvancedToggle, CardNote, DrillRow, InputField, SectionMeta, StatusBadge, TextAreaField } from "./controls";
 import { AppsPicker } from "./AppsPicker";
 import { LibraryPicker } from "./LibraryPicker";
 
-const MANAGED = "__managed__";
 /** Shown by a select whose value isn't one of its options (SettingsSelect displays the raw value). */
 const CUSTOM = "Custom";
-const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/]|\\\\)/;
 
 // ---------------------------------------------------------------- access
 
 export function AccessSection(props: PanelProps) {
   const { colors, bot, localHost, onPatch } = props;
-  // A folder or grants already set count as in use, so they show.
-  const [advanced, setAdvanced] = useState(bot.cwd !== null || bot.alwaysAllow.length > 0);
+  // Grants already set count as in use, so they show.
+  const [advanced, setAdvanced] = useState(bot.alwaysAllow.length > 0);
   return (
     <>
       <PaseoToolsSection colors={colors} bot={bot} localHost={localHost} />
       <LibraryPicker {...props} kind="mcp" title="MCP servers" info="Added on top of the MCP servers the provider already loads. Paseo's own tools are always included. Add and edit servers in Skills & Tools." />
-      <AppsPicker colors={colors} bot={bot} localHost={localHost} onPatch={onPatch} />
+      <AppsPicker colors={colors} bot={bot} onPatch={onPatch} />
       <AdvancedToggle colors={colors} open={advanced} onToggle={() => setAdvanced(!advanced)} />
-      {advanced ? (
-        <>
-          <FolderSection {...props} />
-          <GrantsSection {...props} />
-        </>
-      ) : null}
+      {advanced ? <GrantsSection {...props} /> : null}
     </>
   );
 }
 
-function FolderSection({ colors, bot, localHost, onPatch }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
-  const workspaces = useHostWorkspaces(host);
-  const [pathText, setPathText] = useState(bot.cwd ?? "");
-  // Picking a folder from the list rewrites the path field; remounting resets its text.
-  const [pathKey, setPathKey] = useState(0);
-  const options = [
-    ...(host.isLocal ? [{ label: "Shared", value: MANAGED }] : []),
-    ...(workspaces.data ?? []).map((workspace) => ({ label: workspace.label, value: workspace.directory })),
-  ];
-  const folderValue = bot.cwd === null ? (host.isLocal ? MANAGED : "Choose a folder") : options.some((option) => option.value === bot.cwd) ? bot.cwd : CUSTOM;
-  const pathError = pathText.trim() && !ABSOLUTE_PATH.test(pathText.trim()) ? "Use an absolute path" : null;
-  return (
-    <SettingsSection title="Working folder" info="Where the bot's chats run. The shared folder keeps every bot chat in one Bots workspace.">
-      <SettingsCard>
-        <SettingsSelect
-          label="Folder"
-          value={folderValue}
-          options={options}
-          onValueChange={(next) => {
-            const cwd = next === MANAGED ? null : next;
-            onPatch({ cwd });
-            setPathText(cwd ?? "");
-            setPathKey((key) => key + 1);
-          }}
-        />
-        <InputField
-          colors={colors}
-          key={pathKey}
-          label="Path"
-          hint={host.isLocal ? "Empty uses the shared Bots folder" : "A folder on the bot's host"}
-          error={pathError}
-          initialValue={pathText}
-          placeholder={host.isLocal ? "Shared Bots folder" : "/Users/me/work"}
-          onChangeText={(text) => {
-            setPathText(text);
-            const trimmed = text.trim();
-            if (!trimmed) onPatch({ cwd: null });
-            else if (ABSOLUTE_PATH.test(trimmed)) onPatch({ cwd: trimmed });
-          }}
-        />
-      </SettingsCard>
-    </SettingsSection>
-  );
-}
-
-function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+function GrantsSection({ colors, bot, library, onPatch }: PanelProps) {
   const [allowText, setAllowText] = useState(bot.alwaysAllow.join("\n"));
   const lines = allowText.split("\n").map((line) => line.trim()).filter(Boolean);
   // Only grants for the bot's own servers are sent; Paseo rejects the rest.
-  const active = new Set([...botMcpServers(bot, library).map((server) => server.name), ...(host.isLocal && bot.apps.length ? [APPS_MCP_NAME] : []), ...(host.isLocal ? [TOOLS_MCP_NAME] : [])]);
+  const active = new Set([...botMcpServers(bot, library).map((server) => server.name), ...(bot.apps.length ? [APPS_MCP_NAME] : []), TOOLS_MCP_NAME]);
   const grants = toolGrants(lines).filter((grant) => active.has(grant.server));
   const ignored = lines.length - grants.length;
   return (
@@ -127,7 +73,7 @@ function GrantsSection({ colors, bot, library, localHost, onPatch }: PanelProps)
  * setting, so this shows it and can turn it back on.
  */
 function PaseoToolsSection({ colors, bot, localHost }: Pick<PanelProps, "colors" | "bot" | "localHost">) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const tools = usePaseoTools(host, bot.provider);
   const [busy, setBusy] = useState(false);
   const state = tools.state;
@@ -168,8 +114,7 @@ function PaseoToolsSection({ colors, bot, localHost }: Pick<PanelProps, "colors"
 // ---------------------------------------------------------------- model
 
 export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
-  const hosts = useHosts();
+  const host = useBotHost(localHost);
   const providers = useProviders(host);
   const profiles = useAgentProfiles(host);
   const provider = providers.data?.find((entry) => entry.provider === bot.provider);
@@ -178,8 +123,6 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
   const thinking = model?.thinkingOptions ?? models.find((entry) => entry.isDefault)?.thinkingOptions ?? [];
   const profile = (profiles.data ?? []).find((entry) => entry.provider === bot.provider && (entry.model ?? null) === bot.model);
   const providerPlaceholder = providers.isLoading ? "Loading..." : "Choose a provider";
-  // Another host counts as in use, so it shows.
-  const [advanced, setAdvanced] = useState(bot.hostId !== null);
 
   return (
     <>
@@ -213,35 +156,19 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
         </SettingsCard>
       </SettingsSection>
   
-      <AdvancedToggle colors={colors} open={advanced} onToggle={() => setAdvanced(!advanced)} />
-      {advanced ? (
-        <SettingsSection title="Where it runs" info="The Paseo host the bot's chats start on, and an agent profile that fills in the settings above.">
+      {(profiles.data ?? []).length > 0 ? (
+        <SettingsSection title="Agent profile" info="Fills in the settings above from one of the host's agent profiles.">
           <SettingsCard>
             <SettingsSelect
-              label="Host"
-              hint={host.isLocal ? "This host" : undefined}
-              error={host.online ? null : `${host.label} is offline, so its providers can't be listed`}
-              value={bot.hostId ?? ""}
-              options={[
-                { label: localHost.label, value: "" },
-                ...hosts
-                  .filter((entry) => entry.serverId !== localHost.id)
-                  .map((entry) => ({ label: `${entry.label}${entry.status === "online" ? "" : ` (${entry.status})`}`, value: entry.serverId })),
-              ]}
-              onValueChange={(value) => onPatch({ hostId: value || null, provider: "", model: null, modeId: null, thinkingOptionId: null, cwd: value ? bot.cwd : null })}
+              label="Agent profile"
+              hint="Fills in provider, model, mode and thinking"
+              value={profile?.id ?? CUSTOM}
+              options={profiles.data!.map((entry) => ({ label: entry.name, value: entry.id }))}
+              onValueChange={(id) => {
+                const chosen = profiles.data?.find((entry) => entry.id === id);
+                if (chosen) onPatch({ provider: chosen.provider, model: chosen.model ?? null, modeId: chosen.modeId ?? null, thinkingOptionId: chosen.thinkingOptionId ?? null });
+              }}
             />
-            {(profiles.data ?? []).length > 0 ? (
-              <SettingsSelect
-                label="Agent profile"
-                hint="Fills in provider, model, mode and thinking"
-                value={profile?.id ?? CUSTOM}
-                options={profiles.data!.map((entry) => ({ label: entry.name, value: entry.id }))}
-                onValueChange={(id) => {
-                  const chosen = profiles.data?.find((entry) => entry.id === id);
-                  if (chosen) onPatch({ provider: chosen.provider, model: chosen.model ?? null, modeId: chosen.modeId ?? null, thinkingOptionId: chosen.thinkingOptionId ?? null });
-                }}
-              />
-            ) : null}
           </SettingsCard>
         </SettingsSection>
       ) : null}
@@ -252,7 +179,7 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
 // ---------------------------------------------------------------- permissions
 
 export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const providers = useProviders(host);
   const provider = providers.data?.find((entry) => entry.provider === bot.provider);
   const modes = provider?.modes ?? [];
@@ -271,8 +198,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
           />
         </SettingsCard>
       </SettingsSection>
-      {host.isLocal ? (
-        <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">
+      <SettingsSection title="Other bots" info="Whether this bot may ask other bots on this host for help. Each request starts a chat under the other bot, which works with its own settings.">
           <SettingsCard>
             <SettingsSelect
               label="Contact other bots"
@@ -287,8 +213,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
             />
           </SettingsCard>
         </SettingsSection>
-      ) : null}
-      {host.isLocal ? <AllowedCommands colors={colors} bot={bot} /> : null}
+      <AllowedCommands colors={colors} bot={bot} />
     </>
   );
 }

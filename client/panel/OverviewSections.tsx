@@ -39,14 +39,13 @@ function teamLine(bot: Bot, groups: PanelProps["groups"]): string {
   return `On ${group.name}`;
 }
 
-export function OverviewSection({ colors, bot, library, groups, localHost, onSetup }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+export function OverviewSection({ colors, bot, library, groups, onSetup }: PanelProps) {
   const compose = useRpc(systemPromptRpc);
   const promptBot = useDebounced(bot, 600);
   const prompt = useQuery({
     // The server reads skills and teams from the saved settings, so changes there recompose too.
-    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), host.isLocal, JSON.stringify(library.skills), JSON.stringify(groups)],
-    queryFn: () => compose({ bot: promptBot, local: host.isLocal }),
+    queryKey: ["paseo-bots", "prompt", JSON.stringify(promptBot), JSON.stringify(library.skills), JSON.stringify(groups)],
+    queryFn: () => compose({ bot: promptBot }),
     // Keep the previous composition while edits recompose it, so the card doesn't jump.
     placeholderData: (previous) => previous,
   });
@@ -57,7 +56,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
   const tools = [
     ...botMcpServers(bot, library).map((server) => server.name),
     ...botSkills(bot, library).map((skill) => `${skill.id} (skill)`),
-    ...(appsStatus.data?.configured && host.isLocal ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
+    ...(appsStatus.data?.configured ? bot.apps.map((slug) => `${appNames.get(slug) ?? slug} (app)`) : []),
   ];
   const sections = prompt.data?.sections ?? [];
 
@@ -82,7 +81,7 @@ export function OverviewSection({ colors, bot, library, groups, localHost, onSet
               <SettingsRow label="Team" hint={teamLine(bot, groups)} />
               <SettingsRow label="Can reach" hint={tools.length ? tools.join(", ") : "Only its provider's built-in tools and Paseo's tools"} />
               <SettingsRow label="Runs" hint={bot.routines.length ? bot.routines.map((routine) => `${routine.name}: ${describeSchedule(routine.schedule)}${routine.enabled ? "" : " (paused)"}`).join("\n") : "Only when you message it"} />
-              <SettingsRow label="Won't" hint={botLimits(bot, { local: host.isLocal, appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
+              <SettingsRow label="Won't" hint={botLimits(bot, { appsConfigured: !!appsStatus.data?.configured }).join("\n")} />
             </SettingsCard>
           </Modal.Content>
         </Modal>
@@ -128,8 +127,6 @@ function summarize(before: Bot, after: Bot): string {
     ["apps", "connected apps"],
     ["alwaysAllow", "always-allowed tools"],
     ["contactBots", "contact with other bots"],
-    ["cwd", "folder"],
-    ["hostId", "host"],
     ["provider", "provider"],
     ["model", "model"],
     ["modeId", "mode"],
@@ -156,7 +153,7 @@ export function HistorySection({ colors, bot, history, onRestore }: PanelProps) 
 // ---------------------------------------------------------------- usage
 
 export function UsageSection({ bot, localHost }: PanelProps) {
-  const host = useBotHost(bot.hostId, localHost);
+  const host = useBotHost(localHost);
   const chats = useBotChats(host, bot.id);
   const list = chats.data ?? [];
   const sum = (pick: (usage: NonNullable<(typeof list)[number]["lastUsage"]>) => number | undefined) =>
