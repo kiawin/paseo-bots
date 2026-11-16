@@ -78,6 +78,8 @@ export interface PanelProps {
   history: HistoryEntry[];
   /** The shared skills and MCP servers the bot picks from. */
   library: Library;
+  /** Changes the shared library (a server found on this computer is added to it). */
+  onLibrary(mutate: (library: Library) => Library): Promise<boolean>;
   groups: readonly BotGroup[];
   onPatch(patch: Partial<Bot>): void;
   /** Saves pending edits now (routines run from the saved bot). */
